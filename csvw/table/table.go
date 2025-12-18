@@ -1,8 +1,13 @@
 package table
 
 import (
+	"archive/zip"
+	"bytes"
 	"encoding/csv"
+	"errors"
 	"gocldf/csvw/column"
+	"io"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,21 +59,69 @@ type TableRead struct {
 	Err error
 }
 
-func (tbl *Table) Read(dir string, ch chan<- TableRead) {
-	file, err := os.Open(filepath.Join(dir, tbl.Url))
-	if err != nil {
-		ch <- TableRead{tbl.Url, err}
-		return
+func exists(path string) bool {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true // File or directory exists
 	}
-	defer func(file *os.File) {
-		err := file.Close()
+	if errors.Is(err, os.ErrNotExist) {
+		return false // Specifically does not exist
+	}
+	// Any other error means we can't confirm existence (e.g., permission denied)
+	return false
+}
+
+func readZipped(fp string) []byte {
+	r, err := zip.OpenReader(fp)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer r.Close()
+
+	var contentBytes []byte
+	for _, f := range r.File {
+		rc, err := f.Open()
+		if err != nil {
+			log.Fatal(err)
+		}
+		// 4. Read or process file content (e.g., copy to Stdout)
+		contentBytes, err = io.ReadAll(rc)
+		if err != nil {
+			log.Fatal(err)
+		}
+		rc.Close() // Must close each file reader individually
+		break
+	}
+	return contentBytes
+}
+
+func (tbl *Table) Read(dir string, ch chan<- TableRead) {
+	fp := filepath.Join(dir, tbl.Url)
+	zipped := false
+	if !exists(fp) {
+		fp += ".zip"
+		zipped = true
+	}
+	var rows [][]string
+	var err error
+	if zipped {
+		rows, err = csv.NewReader(bytes.NewReader(readZipped(fp))).ReadAll()
+	} else {
+		file, err := os.Open(fp)
 		if err != nil {
 			ch <- TableRead{tbl.Url, err}
 			return
 		}
-	}(file)
+		defer func(file *os.File) {
+			err := file.Close()
+			if err != nil {
+				ch <- TableRead{tbl.Url, err}
+				return
+			}
+		}(file)
+		rows, err = csv.NewReader(file).ReadAll() // returns [][]string
+	}
 
-	rows, err := csv.NewReader(file).ReadAll() // returns [][]string
 	if err != nil {
 		ch <- TableRead{tbl.Url, err}
 		return

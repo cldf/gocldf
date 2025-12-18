@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"gocldf/csvw/dataset"
 	"os"
@@ -8,6 +9,13 @@ import (
 )
 
 func main() {
+	flag.Usage = func() {
+		fmt.Printf("Usage: %s <CLDF metadata file>\n", os.Args[0])
+	}
+	if len(os.Args) < 2 {
+		flag.Usage()
+		return
+	}
 	ds := dataset.New(os.Args[1:][0])
 	ds.LoadData()
 
