@@ -25,7 +25,7 @@ func New(index int, jsonCol map[string]interface{}) *Column {
 	if ok {
 		name = val.(string)
 	} else {
-		name = "Col_" + strconv.Itoa(index)
+		name = "Col_" + strconv.Itoa(index+1)
 	}
 	val, ok = jsonCol["separator"]
 	if ok {
