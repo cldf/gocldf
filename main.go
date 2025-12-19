@@ -23,32 +23,26 @@ words.csv                              896664
 glosses.csv                              2053
 sources.bib        Sources                 52
 */
-func stats(ds *dataset.Dataset) {
+func stats(ds *dataset.Dataset, db_path string) {
 	ds.LoadData()
 
 	//fmt.Println(ds.MetadataPath)
 	//fmt.Println(":")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
-	fmt.Fprintf(w, "%v\t%v\t%v\n", "Filename", "Component", "Rows")
-	fmt.Fprintf(w, "%v\t%v\t%v\n", "--------", "---------", "----")
+	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "Filename", "Component", "Rows", "FKs")
+	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "--------", "---------", "----", "---")
 	for _, table := range ds.Tables {
 		cname := ""
 		if table.Comp != "" {
-			cname = table.CanonicalName()
+			cname = table.CanonicalName
 		}
-		fmt.Fprintf(w, "%v\t%v\t%v\n", table.Url, cname, len(table.Data))
-		/*
-			fmt.Println(table.CanonicalName() + ": " + strconv.Itoa(len(table.Columns)) + " columns")
-			for _, col := range table.Columns {
-				fmt.Println("   " + col.CanonicalName())
-			}
-			fmt.Println(strconv.Itoa(len(table.Data)) + " rows")
-			fmt.Println("ID of first item: ")
-			fmt.Println(table.Data[0]["cldf_id"])
-			fmt.Println("---")
+		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", table.Url, cname, len(table.Data), len(table.ForeignKeys))
 
-		*/
+		//fmt.Println(table.SqlCreate())
+		//fmt.Println(table.SqlCreateAssociationTables(ds.UrlToCanonicalName()))
 	}
+	//fmt.Println(ds.SqlSchema())
+	ds.ToSqlite(db_path)
 	w.Flush()
 }
 
@@ -61,5 +55,5 @@ func main() {
 		return
 	}
 	ds := dataset.New(os.Args[1:][0])
-	stats(ds)
+	stats(ds, os.Args[2])
 }
