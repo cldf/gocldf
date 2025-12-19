@@ -27,7 +27,7 @@ func TestDatatype_String(t *testing.T) {
 		t.Errorf(`problem`)
 	}
 	defer func() {
-		if r := recover(); r != "invalid value" {
+		if r := recover(); r != "invalid value: sst" {
 			t.Errorf("Unexpected panic: %v", r)
 		}
 	}()

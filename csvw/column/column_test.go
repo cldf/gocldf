@@ -18,18 +18,18 @@ func makeCol(jsonString string) Column {
 func TestColumn_CanonicalName(t *testing.T) {
 	col := makeCol(`{"name":"The Name"}`)
 	want := "The Name"
-	if want != col.CanonicalName() {
+	if want != col.CanonicalName {
 		t.Errorf(`problem`)
 	}
 	col = makeCol(`{"name":"The Name", "propertyUrl": "http://cldf.clld.org/#prop"}`)
 	want = "cldf_prop"
-	if want != col.CanonicalName() {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName())
+	if want != col.CanonicalName {
+		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
 	}
 	col = makeCol(`{}`)
 	want = "Col_1"
-	if want != col.CanonicalName() {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName())
+	if want != col.CanonicalName {
+		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
 	}
 }
 
@@ -42,11 +42,11 @@ func TestColumn_Datatype(t *testing.T) {
 	col = makeCol(`{"datatype": "boolean"}`)
 	want = "boolean"
 	if want != col.Datatype.Base {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName())
+		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
 	}
 	col = makeCol(`{"datatype": {"base": "boolean"}}`)
 	want = "boolean"
 	if want != col.Datatype.Base {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName())
+		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
 	}
 }
