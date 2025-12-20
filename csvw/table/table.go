@@ -99,7 +99,11 @@ func New(jsonTable map[string]interface{}) *Table {
 func (tbl *Table) ReadRow(fields []string) map[string]interface{} {
 	row := make(map[string]interface{}, len(fields))
 	for i := 0; i < len(fields); i++ {
-		row[tbl.Columns[i].CanonicalName] = tbl.Columns[i].ToGo(fields[i], true)
+		val, err := tbl.Columns[i].ToGo(fields[i], true)
+		if err != nil {
+			panic(err)
+		}
+		row[tbl.Columns[i].CanonicalName] = val
 	}
 	return row
 }
@@ -353,7 +357,11 @@ func (tbl *Table) SqlInsert(tx *sql.Tx) {
 			if ok {
 				rows[i][j] = strings.Join(row[col].([]string), sep)
 			} else {
-				rows[i][j] = colMap[col].Datatype.ToSql(row[col])
+				val, err := colMap[col].Datatype.ToSql(row[col])
+				if err != nil {
+					panic(err)
+				}
+				rows[i][j] = val
 			}
 		}
 	}

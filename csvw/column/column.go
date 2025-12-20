@@ -65,27 +65,31 @@ func New(index int, jsonCol map[string]interface{}) *Column {
 		Null:          null}
 }
 
-func (column *Column) ToGo(s string, split bool) any {
+func (column *Column) ToGo(s string, split bool) (any, error) {
 	if slices.Contains(column.Null, s) {
 		if split && column.Separator != "" {
-			return make([]string, 0)
+			return make([]string, 0), nil
 		}
-		return nil
+		return nil, nil
 	}
 	if split && column.Separator != "" {
 		fields := strings.Split(s, column.Separator)
 		res := make([]string, len(fields))
 		for i, field := range fields {
-			res[i] = column.ToGo(field, false).(string)
+			val, err := column.ToGo(field, false)
+			if err != nil {
+				return nil, err
+			}
+			res[i] = val.(string)
 		}
-		return res
+		return res, nil
 	}
 	return column.Datatype.ToGo(s)
 }
 
-func (column *Column) ToString(x any) string {
+func (column *Column) ToString(x any) (string, error) {
 	if x == nil {
-		return column.Null[0]
+		return column.Null[0], nil
 	}
 	return column.Datatype.ToString(x)
 }

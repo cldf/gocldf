@@ -2,7 +2,7 @@ package datatype
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
 	"regexp"
 	"slices"
 	"strconv"
@@ -50,167 +50,150 @@ type BaseType struct {
 	// GetDerivedDescription is called when instantiating a Datatype object.
 	// The result is stored as DerivedDescription member of the Datatype and can be
 	// accessed from ToGo and ToString via the Datatype passed as first argument.
-	GetDerivedDescription func(map[string]any) map[string]any
-	ToGo                  func(*Datatype, string) any
-	ToString              func(*Datatype, any) string
+	GetDerivedDescription func(map[string]any) (map[string]any, error)
+	ToGo                  func(*Datatype, string) (any, error)
+	ToString              func(*Datatype, any) (string, error)
 	SqlType               string
-	ToSql                 func(*Datatype, any) any
+	ToSql                 func(*Datatype, any) (any, error)
 }
 
 var (
 	Boolean = BaseType{
-		GetDerivedDescription: func(dtProps map[string]any) map[string]any {
+		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 			val, ok := dtProps["format"]
 			if ok {
 				yesno := strings.Split(val.(string), "|")
-				return map[string]any{"true": []string{yesno[0]}, "false": []string{yesno[1]}}
+				return map[string]any{"true": []string{yesno[0]}, "false": []string{yesno[1]}}, nil
 			}
-			return map[string]any{"true": []string{"true", "1"}, "false": []string{"false", "0"}}
+			return map[string]any{"true": []string{"true", "1"}, "false": []string{"false", "0"}}, nil
 		},
-		ToGo: func(dt *Datatype, s string) any {
+		ToGo: func(dt *Datatype, s string) (any, error) {
 			if slices.Contains(dt.DerivedDescription["true"].([]string), s) {
-				return true
-			} else if slices.Contains(dt.DerivedDescription["false"].([]string), s) {
-				return false
+				return true, nil
 			}
-			panic("Invalid value for datatype")
+			if slices.Contains(dt.DerivedDescription["false"].([]string), s) {
+				return false, nil
+			}
+			return nil, errors.New("invalid value")
 		},
-		ToString: func(dt *Datatype, x any) string {
+		ToString: func(dt *Datatype, x any) (string, error) {
 			if x.(bool) {
-				return dt.DerivedDescription["true"].([]string)[0]
+				return dt.DerivedDescription["true"].([]string)[0], nil
 			}
-			return dt.DerivedDescription["false"].([]string)[0]
+			return dt.DerivedDescription["false"].([]string)[0], nil
 		},
 		SqlType: "INTEGER",
-		ToSql: func(dt *Datatype, x any) any {
-			if x == nil {
-				return nil
-			}
+		ToSql: func(dt *Datatype, x any) (any, error) {
 			if x.(bool) {
-				return 1
+				return 1, nil
 			}
-			return 0
+			return 0, nil
 		},
 	}
 	String = BaseType{
-		GetDerivedDescription: func(dtProps map[string]any) map[string]any {
+		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 			val, ok := dtProps["format"]
 			if ok {
 				// FIXME: must make sure regex is anchored on both sides! I.e. wrap in "^$" if necessary.
-				return map[string]any{"regex": regexp.MustCompile(val.(string))}
+				return map[string]any{"regex": regexp.MustCompile(val.(string))}, nil
 			}
-			return map[string]any{"regex": nil}
+			return map[string]any{"regex": nil}, nil
 		},
-		ToGo: func(dt *Datatype, s string) any {
+		ToGo: func(dt *Datatype, s string) (any, error) {
 			if dt.DerivedDescription["regex"] != nil {
 				if !dt.DerivedDescription["regex"].(*regexp.Regexp).MatchString(s) {
-					panic(fmt.Sprintf("invalid value: %v", s))
+					return nil, errors.New("invalid value")
 				}
 			}
-			return s
+			return s, nil
 		},
-		ToString: func(dt *Datatype, x any) string {
-			return x.(string)
+		ToString: func(dt *Datatype, x any) (string, error) {
+			return x.(string), nil
 		},
 		SqlType: "TEXT",
-		ToSql: func(dt *Datatype, x any) any {
-			if x == nil {
-				return nil
-			}
-			return x.(string)
+		ToSql: func(dt *Datatype, x any) (any, error) {
+			return x.(string), nil
 		},
 	}
 	AnyURI = BaseType{
-		GetDerivedDescription: func(dtProps map[string]any) map[string]any {
-			return map[string]any{}
+		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+			return map[string]any{}, nil
 		},
-		ToGo: func(dt *Datatype, s string) any {
-			return s
+		ToGo: func(dt *Datatype, s string) (any, error) {
+			return s, nil
 		},
-		ToString: func(dt *Datatype, x any) string {
-			return x.(string)
+		ToString: func(dt *Datatype, x any) (string, error) {
+			return x.(string), nil
 		},
 		SqlType: "TEXT",
-		ToSql: func(dt *Datatype, x any) any {
-			if x == nil {
-				return nil
-			}
-			return x.(string)
+		ToSql: func(dt *Datatype, x any) (any, error) {
+			return x.(string), nil
 		},
 	}
 	Integer = BaseType{
-		GetDerivedDescription: func(dtProps map[string]any) map[string]any {
-			return map[string]any{}
+		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+			return map[string]any{}, nil
 		},
-		ToGo: func(dt *Datatype, s string) any {
+		ToGo: func(dt *Datatype, s string) (any, error) {
 			val, err := strconv.Atoi(s)
-			if err == nil {
-				return val
+			if err != nil {
+				return nil, err
 			}
-			panic("Invalid value for integer")
+			return val, nil
 		},
-		ToString: func(dt *Datatype, x any) string {
-			return x.(string)
+		ToString: func(dt *Datatype, x any) (string, error) {
+			return strconv.Itoa(x.(int)), nil
 		},
 		SqlType: "INTEGER",
-		ToSql: func(dt *Datatype, x any) any {
-			if x == nil {
-				return nil
-			}
-			return x.(int)
+		ToSql: func(dt *Datatype, x any) (any, error) {
+			return x.(int), nil
 		},
 	}
 	Decimal = BaseType{
-		GetDerivedDescription: func(dtProps map[string]any) map[string]any {
-			return map[string]any{}
+		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+			return map[string]any{}, nil
 		},
-		ToGo: func(dt *Datatype, s string) any {
+		ToGo: func(dt *Datatype, s string) (any, error) {
 			val, err := strconv.ParseFloat(s, 64)
-			if err == nil {
-				return val
+			if err != nil {
+				return nil, err
 			}
-			panic("Invalid value for integer")
+			return val, nil
 		},
-		ToString: func(dt *Datatype, x any) string {
-			return x.(string)
+		ToString: func(dt *Datatype, x any) (string, error) {
+			return x.(string), nil
 		},
 		SqlType: "REAL",
-		ToSql: func(dt *Datatype, x any) any {
-			if x == nil {
-				return nil
-			}
-			return x.(float64)
+		ToSql: func(dt *Datatype, x any) (any, error) {
+			return x.(float64), nil
 		},
 	}
 	Json = BaseType{
-		GetDerivedDescription: func(dtProps map[string]any) map[string]any {
-			return map[string]any{}
+		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+			return map[string]any{}, nil
 		},
-		ToGo: func(dt *Datatype, s string) any {
+		ToGo: func(dt *Datatype, s string) (any, error) {
 			var result any
 			err := json.Unmarshal([]byte(s), &result)
 			if err != nil {
-				panic(fmt.Sprintf("%v: '%v'", err, s))
+				return nil, err
 			}
-			return result
+			return result, nil
 		},
-		ToString: func(dt *Datatype, x any) string {
+		ToString: func(dt *Datatype, x any) (string, error) {
 			res, err := json.Marshal(x)
 			if err != nil {
-				panic(err)
+				return "", nil
 			}
-			return string(res)
+			return string(res), nil
 		},
 		SqlType: "TEXT",
-		ToSql: func(dt *Datatype, x any) any {
-			if x == nil {
-				return nil
-			}
+		ToSql: func(dt *Datatype, x any) (any, error) {
 			res, err := json.Marshal(x)
 			if err != nil {
-				panic(err)
+				return nil, err
 			}
-			return string(res)
+			return string(res), nil
 		},
 	}
 )
@@ -238,16 +221,18 @@ func New(jsonCol map[string]interface{}) *Datatype {
 		}
 	}
 	//fmt.Println(base)
-	return &Datatype{
-		Base:               base,
-		DerivedDescription: BaseTypes[base].GetDerivedDescription(dtProps)}
+	dd, err := BaseTypes[base].GetDerivedDescription(dtProps)
+	if err != nil {
+		panic(err)
+	}
+	return &Datatype{Base: base, DerivedDescription: dd}
 }
 
-func (dt *Datatype) ToString(val any) string {
+func (dt *Datatype) ToString(val any) (string, error) {
 	return BaseTypes[dt.Base].ToString(dt, val)
 }
 
-func (dt *Datatype) ToGo(s string) any {
+func (dt *Datatype) ToGo(s string) (any, error) {
 	return BaseTypes[dt.Base].ToGo(dt, s)
 }
 
@@ -255,6 +240,9 @@ func (dt *Datatype) SqlType() string {
 	return BaseTypes[dt.Base].SqlType
 }
 
-func (dt *Datatype) ToSql(val any) any {
+func (dt *Datatype) ToSql(val any) (any, error) {
+	if val == nil {
+		return nil, nil
+	}
 	return BaseTypes[dt.Base].ToSql(dt, val)
 }

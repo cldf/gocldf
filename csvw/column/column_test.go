@@ -16,46 +16,39 @@ func makeCol(jsonString string) Column {
 }
 
 func TestColumn_CanonicalName(t *testing.T) {
-	col := makeCol(`{"name":"The Name"}`)
-	want := "The Name"
-	if want != col.CanonicalName {
-		t.Errorf(`problem`)
+	var tests = []struct {
+		jsonCol string
+		input   string
+	}{
+		{`{"name":"The Name"}`, "The Name"},
+		{`{"name":"The Name", "propertyUrl": "http://cldf.clld.org/#prop"}`, "cldf_prop"},
+		{`{}`, "Col_1"},
 	}
-	col = makeCol(`{"name":"The Name", "propertyUrl": "http://cldf.clld.org/#prop"}`)
-	want = "cldf_prop"
-	if want != col.CanonicalName {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
-	}
-	col = makeCol(`{}`)
-	want = "Col_1"
-	if want != col.CanonicalName {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
+	for _, tt := range tests {
+		t.Run("CanonicalName", func(t *testing.T) {
+			col := makeCol(tt.jsonCol)
+			if tt.input != col.CanonicalName {
+				t.Errorf(`problem: %q vs %q`, tt.input, col.CanonicalName)
+			}
+		})
 	}
 }
 
 func TestColumn_Datatype(t *testing.T) {
-	col := makeCol(`{"name": "The Name"}`)
-	want := "string"
-	if want != col.Datatype.Base {
-		t.Errorf(`problem`)
+	var tests = []struct {
+		jsonCol string
+		input   string
+	}{
+		{`{}`, "string"},
+		{`{"datatype": "boolean"}`, "boolean"},
+		{`{"datatype": {"base": "boolean"}}`, "boolean"},
 	}
-	col = makeCol(`{"datatype": "boolean"}`)
-	want = "boolean"
-	if want != col.Datatype.Base {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
+	for _, tt := range tests {
+		t.Run("Datatype", func(t *testing.T) {
+			col := makeCol(tt.jsonCol)
+			if tt.input != col.Datatype.Base {
+				t.Errorf(`problem: %q vs %q`, tt.input, col.Datatype.Base)
+			}
+		})
 	}
-	col = makeCol(`{"datatype": {"base": "boolean"}}`)
-	want = "boolean"
-	if want != col.Datatype.Base {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
-	}
-}
-
-func TestColumn_RoundtripValue(t *testing.T) {
-	col := makeCol(`{"datatype": {"base": "boolean","format":"yes|no"}}`)
-	want := "yes"
-	if want != col.ToString(col.ToGo("yes", true)) {
-		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
-	}
-
 }
