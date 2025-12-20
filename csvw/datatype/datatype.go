@@ -76,7 +76,10 @@ var (
 			panic("Invalid value for datatype")
 		},
 		ToString: func(dt *Datatype, x any) string {
-			return "not implemented"
+			if x.(bool) {
+				return dt.DerivedDescription["true"].([]string)[0]
+			}
+			return dt.DerivedDescription["false"].([]string)[0]
 		},
 		SqlType: "INTEGER",
 		ToSql: func(dt *Datatype, x any) any {

@@ -50,3 +50,12 @@ func TestColumn_Datatype(t *testing.T) {
 		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
 	}
 }
+
+func TestColumn_RoundtripValue(t *testing.T) {
+	col := makeCol(`{"datatype": {"base": "boolean","format":"yes|no"}}`)
+	want := "yes"
+	if want != col.ToString(col.ToGo("yes", true)) {
+		t.Errorf(`problem: %q vs %q`, want, col.CanonicalName)
+	}
+
+}

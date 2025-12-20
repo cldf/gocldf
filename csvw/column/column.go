@@ -82,3 +82,10 @@ func (column *Column) ToGo(s string, split bool) any {
 	}
 	return column.Datatype.ToGo(s)
 }
+
+func (column *Column) ToString(x any) string {
+	if x == nil {
+		return column.Null[0]
+	}
+	return column.Datatype.ToString(x)
+}

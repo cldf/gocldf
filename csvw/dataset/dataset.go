@@ -3,8 +3,8 @@ package dataset
 import (
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"gocldf/csvw/table"
+	"gocldf/db"
 	"os"
 	"path/filepath"
 	"slices"
@@ -149,40 +149,34 @@ func (dataset *Dataset) OrderedTables() []string {
 }
 
 func (dataset *Dataset) ToSqlite(db_path string) {
-	os.Create(db_path)
-
-	db, err := sql.Open("sqlite3", db_path)
-	if err != nil {
-		fmt.Println(err)
-		panic(err)
-	}
-	db.Exec("PRAGMA journal_mode = WAL;")
-	db.Exec("PRAGMA synchronous = NORMAL;")
-
-	_, err = db.Exec(dataset.SqlSchema())
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
-
-	orderedTables := dataset.OrderedTables()
-	urlToName := dataset.UrlToCanonicalName()
-	urlToTable := dataset.UrlToTable()
-
-	for _, url := range orderedTables {
-		tbl, ok := dataset.Tables[urlToName[url]]
-		if ok {
-			tbl.SqlInsert(db)
+	err := db.WithDatabase(db_path, func(database *sql.DB) error {
+		_, err := database.Exec(dataset.SqlSchema())
+		if err != nil {
+			return err
 		}
-	}
 
-	for _, url := range orderedTables {
-		tbl, ok := dataset.Tables[urlToName[url]]
-		if ok {
-			tbl.SqlInsertAssociationTables(db, urlToTable)
-		}
-	}
+		orderedTables := dataset.OrderedTables()
+		urlToName := dataset.UrlToCanonicalName()
+		urlToTable := dataset.UrlToTable()
 
-	//stmt, err := db.Prepare("SELECT * FROM album WHERE id = ?")
-	db.Close()
+		db.WithTransaction(database, func(tx *sql.Tx) {
+			for _, url := range orderedTables {
+				tbl, ok := dataset.Tables[urlToName[url]]
+				if ok {
+					tbl.SqlInsert(tx)
+				}
+			}
+
+			for _, url := range orderedTables {
+				tbl, ok := dataset.Tables[urlToName[url]]
+				if ok {
+					tbl.SqlInsertAssociationTables(tx, urlToTable)
+				}
+			}
+		})
+		return err
+	}, true)
+	if err != nil {
+		return
+	}
 }

@@ -221,7 +221,7 @@ func (tbl *Table) SqlCreateAssociationTables(UrlToTable map[string]*Table) strin
 	return strings.Join(res, "\n")
 }
 
-func (tbl *Table) SqlInsertAssociationTables(database *sql.DB, UrlToTable map[string]*Table) {
+func (tbl *Table) SqlInsertAssociationTables(tx *sql.Tx, UrlToTable map[string]*Table) {
 	for _, fk := range tbl.ForeignKeys {
 		if fk.ManyToMany {
 			stable := tbl.CanonicalName
@@ -230,29 +230,31 @@ func (tbl *Table) SqlInsertAssociationTables(database *sql.DB, UrlToTable map[st
 			ttable := ttable_.CanonicalName
 			tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
 
-			var insertSql []string
-			insertSql = append(insertSql, fmt.Sprintf("INSERT INTO `%v_%v` (", stable, ttable))
-			insertSql = append(insertSql, fmt.Sprintf("`%v_%v`, `%v_%v`, context", stable, spk, ttable, tpk))
-			insertSql = append(insertSql, ") VALUES ")
+			colNames := []string{
+				fmt.Sprintf("%v_%v", stable, spk),
+				fmt.Sprintf("%v_%v", ttable, tpk),
+				"context"}
 
-			db.WithTransaction(database, func(tx *sql.Tx) {
-				colName := tbl.NameToCol()[fk.ColumnReference[0]].CanonicalName
-				for _, row := range tbl.Data {
-					vals, ok := row[colName].([]string)
-					if ok {
-						if len(vals) > 0 {
-							rows := make([][]any, len(vals))
-							for i, val := range vals {
-								rows[i] = make([]any, 3)
-								rows[i][0] = tbl.PrimaryKey[0]
-								rows[i][1] = val
-								rows[i][2] = colName
-							}
-							db.BatchInsert(tx, strings.Join(insertSql, ""), rows, 3)
+			colName := tbl.NameToCol()[fk.ColumnReference[0]].CanonicalName
+			for _, row := range tbl.Data {
+				vals, ok := row[colName].([]string)
+				if ok {
+					if len(vals) > 0 {
+						rows := make([][]any, len(vals))
+						for i, val := range vals {
+							rows[i] = make([]any, 3)
+							rows[i][0] = tbl.PrimaryKey[0]
+							rows[i][1] = val
+							rows[i][2] = colName
 						}
+						db.BatchInsert(
+							tx,
+							fmt.Sprintf("%v_%v", stable, ttable),
+							colNames,
+							rows)
 					}
 				}
-			})
+			}
 		}
 	}
 }
@@ -329,9 +331,8 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) string {
 	return strings.Join(res, "\n")
 }
 
-func (tbl *Table) SqlInsert(database *sql.DB) {
+func (tbl *Table) SqlInsert(tx *sql.Tx) {
 	manyToManyCols := tbl.ManyToManyCols()
-	var insertSql []string
 	var colNames []string
 	colMap := make(map[string]*column.Column)
 	listValued := make(map[string]string)
@@ -344,14 +345,6 @@ func (tbl *Table) SqlInsert(database *sql.DB) {
 			}
 		}
 	}
-	insertSql = append(insertSql, fmt.Sprintf("INSERT INTO `%v` (", tbl.CanonicalName))
-	for i, col := range colNames {
-		if i > 0 {
-			insertSql = append(insertSql, ",")
-		}
-		insertSql = append(insertSql, fmt.Sprintf("`%v`", col))
-	}
-	insertSql = append(insertSql, ") VALUES ")
 	rows := make([][]any, len(tbl.Data))
 	for i, row := range tbl.Data {
 		rows[i] = make([]any, len(colNames))
@@ -364,7 +357,5 @@ func (tbl *Table) SqlInsert(database *sql.DB) {
 			}
 		}
 	}
-	db.WithTransaction(database, func(tx *sql.Tx) {
-		db.BatchInsert(tx, strings.Join(insertSql, ""), rows, len(colNames))
-	})
+	db.BatchInsert(tx, tbl.CanonicalName, colNames, rows)
 }
