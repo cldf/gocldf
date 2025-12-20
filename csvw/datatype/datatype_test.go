@@ -66,8 +66,8 @@ func TestColumn_RoundtripValue(t *testing.T) {
 		t.Run("Roundtrip", func(t *testing.T) {
 			dt := makeDatatype(tt.datatype)
 			val, err := dt.ToGo(tt.input)
-			if err != nil {
-				if val, err := dt.ToString(val); err != nil {
+			if err == nil {
+				if val, err := dt.ToString(val); err == nil {
 					if val != tt.input {
 						t.Errorf(`problem: %v vs %v`, tt.input, dt)
 					}
