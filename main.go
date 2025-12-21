@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
+	"gocldf/cmd"
 	"gocldf/csvw/dataset"
 	"gocldf/db"
 	"os"
@@ -90,6 +91,8 @@ func createdb(ds *dataset.Dataset, dbPath string) {
 }
 
 func main() {
+	cmd.Execute()
+	return
 	flag.Usage = func() {
 		fmt.Printf("Usage: %s %s <CLDF metadata file> [*ARGS]\n", "CMD {stats|createdb}", os.Args[0])
 	}
