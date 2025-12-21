@@ -74,10 +74,13 @@ func New(jsonTable map[string]interface{}) (*Table, error) {
 		}
 	}
 	var pk []string
-	for _, col := range jsonTable["tableSchema"].(map[string]interface{})["primaryKey"].([]interface{}) {
-		val, ok := col.(string)
-		if ok {
-			pk = append(pk, val)
+	jsonPk, ok := jsonTable["tableSchema"].(map[string]interface{})["primaryKey"]
+	if ok {
+		for _, col := range jsonPk.([]interface{}) {
+			val, ok := col.(string)
+			if ok {
+				pk = append(pk, val)
+			}
 		}
 	}
 	res := &Table{

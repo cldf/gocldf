@@ -1,0 +1,14 @@
+{
+  "url": "table_simple.csv",
+  "tableSchema": {
+    "columns": [
+      {
+        "datatype": {
+          "base": "string",
+          "format": "[a-zA-Z0-9_\\-]+"
+        },
+        "name": "ID"
+      }
+    ]
+  }
+}
