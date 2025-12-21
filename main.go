@@ -28,12 +28,17 @@ glosses.csv                              2053
 sources.bib        Sources                 52
 */
 func stats(ds *dataset.Dataset) {
-	ds.LoadData()
+	err := ds.LoadData()
+	if err != nil {
+		panic(err)
+	}
 
 	//fmt.Println(ds.MetadataPath)
 	//fmt.Println(":")
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
+	// noinspection GoUnhandledErrorResultInspection
 	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "Filename", "Component", "Rows", "FKs")
+	// noinspection GoUnhandledErrorResultInspection
 	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "--------", "---------", "----", "---")
 	for _, table := range ds.Tables {
 		cname := ""
@@ -42,25 +47,26 @@ func stats(ds *dataset.Dataset) {
 		}
 		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", table.Url, cname, len(table.Data), len(table.ForeignKeys))
 	}
+	// noinspection GoUnhandledErrorResultInspection
 	w.Flush()
 }
 
-func createdb(ds *dataset.Dataset, db_path string) {
+func createdb(ds *dataset.Dataset, dbPath string) {
 	err := ds.LoadData()
 	if err != nil {
 		panic(err)
 	}
-	err = db.WithDatabase(db_path, func(database *sql.DB) error {
+	err = db.WithDatabase(dbPath, func(database *sql.DB) error {
 		return db.WithTransaction(database, func(tx *sql.Tx) error {
 			schema, tableData, err := ds.ToSqlite(tx)
 			if err != nil {
 				return err
 			}
-			_, err = tx.Exec(schema)
+			_, err = tx.Exec(schema) // Write the schema ...
 			if err != nil {
 				return err
 			}
-			for _, tData := range tableData {
+			for _, tData := range tableData { // ... and the data.
 				db.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
 			}
 			return nil
@@ -71,7 +77,7 @@ func createdb(ds *dataset.Dataset, db_path string) {
 	}
 	var count string
 	err = db.QueryDatabase(
-		db_path,
+		dbPath,
 		"select cldf_id from languagetable limit 1",
 		func(rows *sql.Rows) error {
 			return rows.Scan(&count)

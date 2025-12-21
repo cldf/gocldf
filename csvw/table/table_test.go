@@ -3,10 +3,11 @@ package table
 import (
 	"encoding/json"
 	"os"
+	"strings"
 	"testing"
 )
 
-func makeTable(fname string) Table {
+func makeTable(fname string, load bool) Table {
 	data, err := os.ReadFile("testdata/" + fname)
 	if err != nil {
 		panic(err)
@@ -20,15 +21,20 @@ func makeTable(fname string) Table {
 	if err != nil {
 		panic(err)
 	}
+	if load {
+		result := make(chan TableRead, 1)
+		go tbl.Read("testdata/", result)
+		_ = <-result
+	}
 	return *tbl
 }
 
 func TestTable_simple(t *testing.T) {
-	tbl := makeTable("table_simple.json")
-	if len(tbl.PrimaryKey) > 0 {
+	tbl := makeTable("table_simple.json", false)
+	if len(tbl.PrimaryKey) != 1 {
 		t.Errorf(`problem: %q vs %q`, len(tbl.PrimaryKey), 0)
 	}
-	if len(tbl.Columns) != 1 {
+	if len(tbl.Columns) != 2 {
 		t.Errorf(`problem: %q vs %q`, len(tbl.Columns), 1)
 	}
 	if tbl.CanonicalName != "table_simple.csv" {
@@ -44,6 +50,59 @@ func TestTable_simple(t *testing.T) {
 		t.Errorf(`problem`)
 	}
 	if tbl.Data[0]["ID"] != "a" {
+		t.Errorf(`problem`)
+	}
+	if tbl.Data[0]["Separated"].([]string)[1] != "v" {
+		t.Errorf(`problem`)
+	}
+	if len(tbl.Data[1]["Separated"].([]string)) != 0 {
+		t.Errorf(`problem`)
+	}
+	if tbl.Data[2]["Separated"].([]string)[0] != "z" {
+		t.Errorf(`problem`)
+	}
+}
+
+func TestTable_complex(t *testing.T) {
+	tbl := makeTable("table_complex.json", false)
+	if len(tbl.PrimaryKey) != 1 {
+		t.Errorf(`problem: %q vs %q`, len(tbl.PrimaryKey), 0)
+	}
+	if tbl.CanonicalName != "MediaTable" {
+		t.Errorf(`problem: %q vs %q`, len(tbl.CanonicalName), "MediaTable")
+	}
+}
+
+func TestTable_fk(t *testing.T) {
+	tbl := makeTable("table_complex.json", true)
+	if len(tbl.ForeignKeys) != 2 {
+		t.Errorf(`problem`)
+	}
+	if len(tbl.ManyToMany()) != 1 {
+		t.Errorf(`problem`)
+	}
+	tbl2 := makeTable("table_simple.json", true)
+	urlToTable := map[string]*Table{"table_simple.csv": &tbl2}
+	sql, _ := tbl.SqlCreate(urlToTable)
+	if !strings.Contains(sql, "PRIMARY KEY") {
+		t.Errorf(`problem`)
+	}
+	data, colNames, _ := tbl.RowsToSql()
+	if len(data) != 3 {
+		t.Errorf(`problem: %v vs %v`, len(data), 3)
+	}
+	sql = tbl.SqlCreateAssociationTable(*tbl.ManyToMany()[0], urlToTable)
+	if !strings.Contains(sql, "context") {
+		t.Errorf(`problem`)
+	}
+	data, tName, colNames, _ := tbl.AssociationTableRowsToSql(tbl.ManyToMany()[0], urlToTable)
+	if len(data) != 3 {
+		t.Errorf(`problem: %v vs %v`, len(data), 3)
+	}
+	if tName != "MediaTable_table_simple.csv" {
+		t.Errorf(`problem`)
+	}
+	if colNames[1] != "table_simple.csv_ID" {
 		t.Errorf(`problem`)
 	}
 }

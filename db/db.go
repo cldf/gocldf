@@ -24,7 +24,7 @@ func pathExists(path string) bool {
 }
 
 func WithDatabase(dbPath string, fn func(*sql.DB) error, recreate bool) error {
-	if !pathExists(dbPath) || recreate {
+	if dbPath != ":memory:" && (!pathExists(dbPath) || recreate) {
 		create, err := os.Create(dbPath)
 		if err != nil {
 			return err

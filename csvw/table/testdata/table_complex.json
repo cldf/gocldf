@@ -1,0 +1,53 @@
+{
+  "dc:conformsTo": "http://cldf.clld.org/v1.0/terms.rdf#MediaTable",
+  "url": "table_complex.csv",
+  "tableSchema": {
+    "columns": [
+      {
+        "datatype": {
+          "base": "string",
+          "format": "[a-zA-Z0-9_\\-]+"
+        },
+        "name": "ID"
+      },
+      {
+        "datatype": {
+          "base": "string"
+        },
+        "separator": ";",
+        "name": "fk"
+      },
+      {
+        "datatype": {
+          "base": "string"
+        },
+        "name": "fk2"
+      }
+    ],
+    "foreignKeys": [
+      {
+        "columnReference": [
+          "fk"
+        ],
+        "reference": {
+          "resource": "table_simple.csv",
+          "columnReference": [
+            "ID"
+          ]
+        }
+      },
+      {
+        "columnReference": [
+          "fk2"
+        ],
+        "reference": {
+          "resource": "table_simple.csv",
+          "columnReference": [
+            "ID"
+          ]
+        }
+      }
+    ],
+    "primaryKey": ["ID"]
+  }
+}
