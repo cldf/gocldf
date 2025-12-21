@@ -3,6 +3,7 @@ package datatype
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"testing"
 )
 
@@ -13,7 +14,11 @@ func makeDatatype(jsonString string) Datatype {
 	if err != nil {
 		panic(err)
 	}
-	return *New(result)
+	dt, err := New(result)
+	if err != nil {
+		panic(err)
+	}
+	return *dt
 }
 
 func TestDatatype_String(t *testing.T) {
@@ -51,7 +56,64 @@ func TestDatatype_Boolean(t *testing.T) {
 	}
 }
 
-func TestColumn_RoundtripValue(t *testing.T) {
+func TestDatatype_ToGo(t *testing.T) {
+	var tests = []struct {
+		datatype  string
+		input     string
+		assertion func(any) bool
+	}{
+		{
+			`"boolean"`,
+			"1",
+			func(x any) bool { return x.(bool) == true }},
+		{
+			`"integer"`,
+			"5",
+			func(x any) bool { return x.(int) == 5 }},
+		{
+			`"decimal"`,
+			"1.1",
+			func(x any) bool { return x.(float64) == 1.1 }},
+		{
+			`"anyURI"`,
+			"http://example.org",
+			func(x any) bool { return x.(*url.URL).Host == "example.org" }},
+	}
+	for _, tt := range tests {
+		t.Run("ToGo", func(t *testing.T) {
+			dt := makeDatatype(tt.datatype)
+			val, err := dt.ToGo(tt.input)
+			if err == nil {
+				if !tt.assertion(val) {
+					t.Errorf(`problem: %v vs %v`, tt.input, val)
+				}
+			}
+		})
+	}
+}
+
+func TestDatatype_ToGoError(t *testing.T) {
+	var tests = []struct {
+		datatype string
+		input    string
+	}{
+		{`"boolean"`, "x"},
+		{`"integer"`, "x"},
+		{`"decimal"`, "1.x"},
+		{`"anyURI"`, "12:/example.org"},
+	}
+	for _, tt := range tests {
+		t.Run("ToGo", func(t *testing.T) {
+			dt := makeDatatype(tt.datatype)
+			val, err := dt.ToGo(tt.input)
+			if err == nil {
+				t.Errorf(`problem: %v vs %v`, tt.input, val)
+			}
+		})
+	}
+}
+
+func TestDatatype_RoundtripValue(t *testing.T) {
 	var tests = []struct {
 		datatype string
 		input    string
@@ -59,8 +121,10 @@ func TestColumn_RoundtripValue(t *testing.T) {
 		{`{"base": "boolean","format":"yes|no"}`, "yes"},
 		{`{"base": "boolean","format":"yes|no"}`, "no"},
 		{`{"base": "integer"}`, "5"},
+		{`{"base": "decimal"}`, "1.1"},
 		{`{"base":"json"}`, `{"k":5}`},
 		{`{"base":"string"}`, "äöü"},
+		{`{"base":"anyURI"}`, "http://example.org"},
 	}
 	for _, tt := range tests {
 		t.Run("Roundtrip", func(t *testing.T) {
@@ -69,7 +133,7 @@ func TestColumn_RoundtripValue(t *testing.T) {
 			if err == nil {
 				if val, err := dt.ToString(val); err == nil {
 					if val != tt.input {
-						t.Errorf(`problem: %v vs %v`, tt.input, dt)
+						t.Errorf(`problem: %v vs %v`, tt.input, val)
 					}
 				}
 			}

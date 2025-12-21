@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/mod/semver"
 )
 
@@ -49,33 +50,36 @@ func WithDatabase(dbPath string, fn func(*sql.DB) error, recreate bool) error {
 		return err
 	}
 	err = fn(db)
-	err = db.Close()
 	if err != nil {
 		return err
 	}
+	err = db.Close()
 	return err
 }
 
-func WithTransaction(db *sql.DB, fn func(tx *sql.Tx)) (err error) {
+func WithTransaction(db *sql.DB, fn func(tx *sql.Tx) error) (err error) {
 	tx, err := db.Begin()
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 
-	fn(tx)
+	err = fn(tx)
+	if err != nil {
+		return err
+	}
 	if err = tx.Commit(); err != nil {
 		return err
 	}
 	return err
 }
 
-func BatchInsert(db *sql.Tx, tableName string, colNames []string, rows [][]any) {
+func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) {
 	var (
 		version   string
 		maxParams int = 900
 	)
-	err := db.QueryRow("SELECT sqlite_version()").Scan(&version)
+	err := tx.QueryRow("SELECT sqlite_version()").Scan(&version)
 	if err == nil {
 		if semver.Compare("v"+version, "v3.32.0") >= 0 {
 			maxParams = 32000
@@ -111,11 +115,33 @@ func BatchInsert(db *sql.Tx, tableName string, colNames []string, rows [][]any) 
 		for i := 0; i < nRows; i++ {
 			args = append(args, rows[current+i]...)
 		}
-		_, err := db.Exec(insert+allPlaceholders+";", args...)
+		_, err := tx.Exec(insert+allPlaceholders+";", args...)
 		if err != nil {
 			log.Fatal(err)
 		}
 
 		current += nRows
 	}
+}
+
+func Query(db *sql.DB, query string, scanner func(*sql.Rows) error, args ...interface{}) error {
+	rows, err := db.Query(query, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		if err := scanner(rows); err != nil {
+			return err
+		}
+	}
+	return rows.Err()
+}
+
+func QueryDatabase(dbPath string, query string, scanner func(*sql.Rows) error, args ...interface{}) error {
+	err := WithDatabase(dbPath, func(database *sql.DB) error {
+		return Query(database, query, scanner, args...)
+	}, false)
+	return err
 }

@@ -12,7 +12,11 @@ func makeCol(jsonString string) Column {
 	if err != nil {
 		panic(err)
 	}
-	return *New(0, result)
+	col, err := New(0, result)
+	if err != nil {
+		panic(err)
+	}
+	return *col
 }
 
 func TestColumn_CanonicalName(t *testing.T) {

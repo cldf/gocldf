@@ -1,11 +1,15 @@
 package main
 
 import (
+	"database/sql"
 	"flag"
 	"fmt"
 	"gocldf/csvw/dataset"
+	"gocldf/db"
 	"os"
 	"text/tabwriter"
+
+	_ "github.com/mattn/go-sqlite3"
 )
 
 /*
@@ -23,7 +27,7 @@ words.csv                              896664
 glosses.csv                              2053
 sources.bib        Sources                 52
 */
-func stats(ds *dataset.Dataset, db_path string) {
+func stats(ds *dataset.Dataset) {
 	ds.LoadData()
 
 	//fmt.Println(ds.MetadataPath)
@@ -37,23 +41,66 @@ func stats(ds *dataset.Dataset, db_path string) {
 			cname = table.CanonicalName
 		}
 		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", table.Url, cname, len(table.Data), len(table.ForeignKeys))
-
-		//fmt.Println(table.SqlCreate())
-		//fmt.Println(table.SqlCreateAssociationTables(ds.UrlToCanonicalName()))
 	}
-	//fmt.Println(ds.SqlSchema())
-	ds.ToSqlite(db_path)
 	w.Flush()
+}
+
+func createdb(ds *dataset.Dataset, db_path string) {
+	err := ds.LoadData()
+	if err != nil {
+		panic(err)
+	}
+	err = db.WithDatabase(db_path, func(database *sql.DB) error {
+		return db.WithTransaction(database, func(tx *sql.Tx) error {
+			schema, tableData, err := ds.ToSqlite(tx)
+			if err != nil {
+				return err
+			}
+			_, err = tx.Exec(schema)
+			if err != nil {
+				return err
+			}
+			for _, tData := range tableData {
+				db.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
+			}
+			return nil
+		})
+	}, true)
+	if err != nil {
+		panic("Error: " + err.Error())
+	}
+	var count string
+	err = db.QueryDatabase(
+		db_path,
+		"select cldf_id from languagetable limit 1",
+		func(rows *sql.Rows) error {
+			return rows.Scan(&count)
+		},
+	)
+	if err != nil {
+		panic("Error querying database: " + err.Error())
+	}
+	fmt.Println(count)
 }
 
 func main() {
 	flag.Usage = func() {
-		fmt.Printf("Usage: %s <CLDF metadata file>\n", os.Args[0])
+		fmt.Printf("Usage: %s %s <CLDF metadata file> [*ARGS]\n", "CMD {stats|createdb}", os.Args[0])
 	}
-	if len(os.Args) < 2 {
+	if len(os.Args) < 3 {
 		flag.Usage()
 		return
 	}
-	ds := dataset.New(os.Args[1:][0])
-	stats(ds, os.Args[2])
+	ds, err := dataset.New(os.Args[2])
+	if err != nil {
+		panic(err)
+	}
+	switch os.Args[1] {
+	case "stats":
+		stats(ds)
+	case "createdb":
+		createdb(ds, os.Args[3])
+	default:
+		flag.Usage()
+	}
 }

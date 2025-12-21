@@ -16,7 +16,7 @@ type Column struct {
 	Null          []string
 }
 
-func New(index int, jsonCol map[string]interface{}) *Column {
+func New(index int, jsonCol map[string]interface{}) (*Column, error) {
 	var (
 		name          string = ""
 		purl          string = ""
@@ -56,13 +56,18 @@ func New(index int, jsonCol map[string]interface{}) *Column {
 	} else {
 		canonicalName = name
 	}
-	return &Column{
+	dt, err := datatype.New(jsonCol)
+	if err != nil {
+		return nil, err
+	}
+	col := &Column{
 		Name:          name,
 		CanonicalName: canonicalName,
 		PropertyUrl:   purl,
-		Datatype:      *datatype.New(jsonCol),
+		Datatype:      *dt,
 		Separator:     sep,
 		Null:          null}
+	return col, nil
 }
 
 func (column *Column) ToGo(s string, split bool) (any, error) {
@@ -85,6 +90,10 @@ func (column *Column) ToGo(s string, split bool) (any, error) {
 		return res, nil
 	}
 	return column.Datatype.ToGo(s)
+}
+
+func (column *Column) ToSql(x any) (any, error) {
+	return column.Datatype.ToSql(x)
 }
 
 func (column *Column) ToString(x any) (string, error) {

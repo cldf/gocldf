@@ -3,15 +3,12 @@ package table
 import (
 	"archive/zip"
 	"bytes"
-	"database/sql"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"gocldf/csvw/column"
-	"gocldf/db"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"slices"
@@ -39,11 +36,15 @@ type Table struct {
 	ForeignKeys   []*ForeignKey
 }
 
-func New(jsonTable map[string]interface{}) *Table {
+func New(jsonTable map[string]interface{}) (*Table, error) {
 	jsonCols := jsonTable["tableSchema"].(map[string]interface{})["columns"].([]interface{})
 	columns := make([]*column.Column, len(jsonCols))
 	for i, jsonCol := range jsonCols {
-		columns[i] = column.New(i, jsonCol.(map[string]interface{}))
+		col, err := column.New(i, jsonCol.(map[string]interface{}))
+		if err != nil {
+			return nil, err
+		}
+		columns[i] = col
 	}
 	listValued := make(map[string]bool, len(columns))
 	for _, col := range columns {
@@ -60,7 +61,10 @@ func New(jsonTable map[string]interface{}) *Table {
 		for i, jsonFk := range jsonFks.([]interface{}) {
 			fk := ForeignKey{}
 			js, _ := json.Marshal(jsonFk)
-			json.Unmarshal(js, &fk)
+			err := json.Unmarshal(js, &fk)
+			if err != nil {
+				return nil, err
+			}
 			if len(fk.ColumnReference) == 1 && listValued[fk.ColumnReference[0]] {
 				fk.ManyToMany = true
 			} else {
@@ -69,7 +73,7 @@ func New(jsonTable map[string]interface{}) *Table {
 			fks[i] = &fk
 		}
 	}
-	pk := []string{}
+	var pk []string
 	for _, col := range jsonTable["tableSchema"].(map[string]interface{})["primaryKey"].([]interface{}) {
 		val, ok := col.(string)
 		if ok {
@@ -93,19 +97,20 @@ func New(jsonTable map[string]interface{}) *Table {
 	} else {
 		res.CanonicalName = res.Url
 	}
-	return res
+	return res, nil
 }
 
-func (tbl *Table) ReadRow(fields []string) map[string]interface{} {
+// Read a row represented as slice of strings into Go objects.
+func (tbl *Table) readRow(fields []string) (map[string]interface{}, error) {
 	row := make(map[string]interface{}, len(fields))
 	for i := 0; i < len(fields); i++ {
 		val, err := tbl.Columns[i].ToGo(fields[i], true)
 		if err != nil {
-			panic(err)
+			return nil, err
 		}
 		row[tbl.Columns[i].CanonicalName] = val
 	}
-	return row
+	return row, nil
 }
 
 type TableRead struct {
@@ -125,28 +130,32 @@ func exists(path string) bool {
 	return false
 }
 
-func readZipped(fp string) []byte {
+func readZipped(fp string) (bytes []byte, err error) {
 	r, err := zip.OpenReader(fp)
 	if err != nil {
-		log.Fatal(err)
+		return nil, err
 	}
-	defer r.Close()
+	defer func(r *zip.ReadCloser) {
+		err = r.Close()
+	}(r)
 
 	var contentBytes []byte
 	for _, f := range r.File {
 		rc, err := f.Open()
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
-		// 4. Read or process file content (e.g., copy to Stdout)
 		contentBytes, err = io.ReadAll(rc)
 		if err != nil {
-			log.Fatal(err)
+			return nil, err
 		}
-		rc.Close() // Must close each file reader individually
+		err = rc.Close()
+		if err != nil {
+			return nil, err
+		} // Must close each file reader individually
 		break
 	}
-	return contentBytes
+	return contentBytes, nil
 }
 
 func (tbl *Table) Read(dir string, ch chan<- TableRead) {
@@ -156,10 +165,17 @@ func (tbl *Table) Read(dir string, ch chan<- TableRead) {
 		fp += ".zip"
 		zipped = true
 	}
-	var rows [][]string
-	var err error
+	var (
+		rows [][]string
+		err  error
+	)
 	if zipped {
-		rows, err = csv.NewReader(bytes.NewReader(readZipped(fp))).ReadAll()
+		zippedBytes, err := readZipped(fp)
+		if err != nil {
+			ch <- TableRead{tbl.Url, err}
+			return
+		}
+		rows, err = csv.NewReader(bytes.NewReader(zippedBytes)).ReadAll()
 	} else {
 		file, err := os.Open(fp)
 		if err != nil {
@@ -174,15 +190,20 @@ func (tbl *Table) Read(dir string, ch chan<- TableRead) {
 			}
 		}(file)
 		rows, err = csv.NewReader(file).ReadAll() // returns [][]string
+		if err != nil {
+			ch <- TableRead{tbl.Url, err}
+			return
+		}
 	}
 
-	if err != nil {
-		ch <- TableRead{tbl.Url, err}
-		return
-	}
 	for rowIndex, row := range rows {
 		if rowIndex > 0 {
-			tbl.Data = append(tbl.Data, tbl.ReadRow(row))
+			val, err := tbl.readRow(row)
+			if err != nil {
+				ch <- TableRead{tbl.Url, err}
+				return
+			}
+			tbl.Data = append(tbl.Data, val)
 		}
 	}
 	ch <- TableRead{tbl.Url, err}
@@ -196,89 +217,81 @@ func (tbl *Table) NameToCol() map[string]*column.Column {
 	return nameToCol
 }
 
-func (tbl *Table) SqlCreateAssociationTables(UrlToTable map[string]*Table) string {
+func (tbl *Table) SqlCreateAssociationTable(fk ForeignKey, UrlToTable map[string]*Table) string {
 	var res []string
-	for _, fk := range tbl.ForeignKeys {
-		if fk.ManyToMany {
-			stable := tbl.CanonicalName
-			spk := tbl.NameToCol()[tbl.PrimaryKey[0]].CanonicalName
-			ttable_ := UrlToTable[fk.Reference.Resource]
-			ttable := ttable_.CanonicalName
-			tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
-			res = append(res, fmt.Sprintf(
-				"CREATE TABLE IF NOT EXISTS `%v_%v` (", stable, ttable))
-			res = append(res, fmt.Sprintf(
-				"\t`%v_%v`\tTEXT,", stable, spk))
-			res = append(res, fmt.Sprintf(
-				"\t`%v_%v`\tTEXT,", ttable, tpk))
-			res = append(res, fmt.Sprintf(
-				"\t`%v`\tTEXT,", "context"))
-			res = append(res, fmt.Sprintf(
-				"\tFOREIGN KEY (`%v_%v`) REFERENCES `%v`(`%v`) ON DELETE CASCADE,",
-				stable, spk, stable, spk))
-			res = append(res, fmt.Sprintf(
-				"\tFOREIGN KEY (`%v_%v`) REFERENCES `%v`(`%v`) ON DELETE CASCADE",
-				ttable, tpk, ttable, tpk))
-			res = append(res, ");")
-		}
-	}
+	stable := tbl.CanonicalName
+	spk := tbl.NameToCol()[tbl.PrimaryKey[0]].CanonicalName
+	ttable_ := UrlToTable[fk.Reference.Resource]
+	ttable := ttable_.CanonicalName
+	tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+	res = append(res, fmt.Sprintf(
+		"CREATE TABLE IF NOT EXISTS `%v_%v` (", stable, ttable))
+	res = append(res, fmt.Sprintf(
+		"\t`%v_%v`\tTEXT,", stable, spk))
+	res = append(res, fmt.Sprintf(
+		"\t`%v_%v`\tTEXT,", ttable, tpk))
+	res = append(res, fmt.Sprintf(
+		"\t`%v`\tTEXT,", "context"))
+	res = append(res, fmt.Sprintf(
+		"\tFOREIGN KEY (`%v_%v`) REFERENCES `%v`(`%v`) ON DELETE CASCADE,",
+		stable, spk, stable, spk))
+	res = append(res, fmt.Sprintf(
+		"\tFOREIGN KEY (`%v_%v`) REFERENCES `%v`(`%v`) ON DELETE CASCADE",
+		ttable, tpk, ttable, tpk))
+	res = append(res, ");")
 	return strings.Join(res, "\n")
 }
 
-func (tbl *Table) SqlInsertAssociationTables(tx *sql.Tx, UrlToTable map[string]*Table) {
-	for _, fk := range tbl.ForeignKeys {
-		if fk.ManyToMany {
-			stable := tbl.CanonicalName
-			spk := tbl.NameToCol()[tbl.PrimaryKey[0]].CanonicalName
-			ttable_ := UrlToTable[fk.Reference.Resource]
-			ttable := ttable_.CanonicalName
-			tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+func (tbl *Table) AssociationTableRowsToSql(
+	fk *ForeignKey,
+	UrlToTable map[string]*Table,
+) (rows [][]any, tableName string, colNames []string, err error) {
+	stable := tbl.CanonicalName
+	spk := tbl.NameToCol()[tbl.PrimaryKey[0]].CanonicalName
+	ttable_ := UrlToTable[fk.Reference.Resource]
+	ttable := ttable_.CanonicalName
+	tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
 
-			colNames := []string{
-				fmt.Sprintf("%v_%v", stable, spk),
-				fmt.Sprintf("%v_%v", ttable, tpk),
-				"context"}
+	colNames = []string{
+		fmt.Sprintf("%v_%v", stable, spk),
+		fmt.Sprintf("%v_%v", ttable, tpk),
+		"context"}
 
-			colName := tbl.NameToCol()[fk.ColumnReference[0]].CanonicalName
-			for _, row := range tbl.Data {
-				vals, ok := row[colName].([]string)
-				if ok {
-					if len(vals) > 0 {
-						rows := make([][]any, len(vals))
-						for i, val := range vals {
-							rows[i] = make([]any, 3)
-							rows[i][0] = tbl.PrimaryKey[0]
-							rows[i][1] = val
-							rows[i][2] = colName
-						}
-						db.BatchInsert(
-							tx,
-							fmt.Sprintf("%v_%v", stable, ttable),
-							colNames,
-							rows)
-					}
+	colName := tbl.NameToCol()[fk.ColumnReference[0]].CanonicalName
+	for _, row := range tbl.Data {
+		vals, ok := row[colName].([]string)
+		if ok {
+			if len(vals) > 0 {
+				for _, val := range vals {
+					row := []any{tbl.PrimaryKey[0], val, colName}
+					rows = append(rows, row)
 				}
 			}
 		}
 	}
+	return rows, stable + "_" + ttable, colNames, nil
 }
 
-func (tbl *Table) ManyToManyCols() []string {
-	var manyToManyCols []string
-	for _, col := range tbl.ForeignKeys {
-		if col.ManyToMany {
-			manyToManyCols = append(manyToManyCols, col.ColumnReference[0])
+func (tbl *Table) ManyToMany() []*ForeignKey {
+	var manyToMany []*ForeignKey
+	for _, fk := range tbl.ForeignKeys {
+		if fk.ManyToMany {
+			manyToMany = append(manyToMany, fk)
 		}
 	}
-	return manyToManyCols
+	return manyToMany
 }
 
-func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) string {
+func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
 	var (
-		res []string
-		pk  []string
+		res        []string
+		pk         []string
+		manyToMany []string
+		clauses    []string
 	)
-	manyToManyCols := tbl.ManyToManyCols()
+	for _, fk := range tbl.ManyToMany() {
+		manyToMany = append(manyToMany, fk.ColumnReference[0])
+	}
 	nameToCol := tbl.NameToCol()
 	pk = append(pk, "PRIMARY KEY(")
 	for i, col := range tbl.PrimaryKey {
@@ -289,9 +302,8 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) string {
 	}
 	pk = append(pk, ")")
 
-	clauses := []string{}
 	for i, col := range tbl.Columns {
-		if !slices.Contains(manyToManyCols, col.Name) {
+		if !slices.Contains(manyToMany, col.Name) {
 			clause := ""
 			if i == 0 {
 				clause += "\t"
@@ -321,7 +333,7 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) string {
 				if ok {
 					clause += fmt.Sprintf("`%v`", val.CanonicalName)
 				} else {
-					panic(fmt.Sprintf("unknown column: %v '%v' %v", tbl.Url, col, nameToCol))
+					return "", errors.New(fmt.Sprintf("unknown column: %v '%v' %v", tbl.Url, col, nameToCol))
 				}
 			}
 			clause += ") ON DELETE CASCADE"
@@ -332,38 +344,47 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) string {
 	res = append(res, fmt.Sprintf("CREATE TABLE IF NOT EXISTS `%v` (", tbl.CanonicalName))
 	res = append(res, strings.Join(clauses, ",\n\t"))
 	res = append(res, ");")
-	return strings.Join(res, "\n")
+	return strings.Join(res, "\n"), nil
 }
 
-func (tbl *Table) SqlInsert(tx *sql.Tx) {
-	manyToManyCols := tbl.ManyToManyCols()
-	var colNames []string
+// RowsToSql returns
+//   - a slice of slices representing the rows in the table with values formatted
+//     for insertion into SQLite.
+//   - a slice of column names representing the column names (in order) for the rows.
+func (tbl *Table) RowsToSql() (rows [][]any, colNames []string, err error) {
+	var manyToMany []string
+	for _, fk := range tbl.ManyToMany() {
+		manyToMany = append(manyToMany, fk.ColumnReference[0])
+	}
 	colMap := make(map[string]*column.Column)
 	listValued := make(map[string]string)
 	for _, col := range tbl.Columns {
-		if !slices.Contains(manyToManyCols, col.Name) {
+		if !slices.Contains(manyToMany, col.Name) {
 			colNames = append(colNames, col.CanonicalName)
 			colMap[col.CanonicalName] = col
 			if col.Separator != "" {
 				listValued[col.CanonicalName] = col.Separator
 			}
 		}
+		// ManyToMany columns are skipped, because these values are turned into rows in association tables.
 	}
-	rows := make([][]any, len(tbl.Data))
+	// Now we assemble the rows:
+	rows = make([][]any, len(tbl.Data))
 	for i, row := range tbl.Data {
 		rows[i] = make([]any, len(colNames))
 		for j, col := range colNames {
 			sep, ok := listValued[col]
 			if ok {
+				// List-valued columns are assumed to be of datatype string.
 				rows[i][j] = strings.Join(row[col].([]string), sep)
 			} else {
-				val, err := colMap[col].Datatype.ToSql(row[col])
+				val, err := colMap[col].ToSql(row[col])
 				if err != nil {
-					panic(err)
+					return rows, colNames, err
 				}
 				rows[i][j] = val
 			}
 		}
 	}
-	db.BatchInsert(tx, tbl.CanonicalName, colNames, rows)
+	return rows, colNames, nil
 }

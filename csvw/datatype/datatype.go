@@ -3,6 +3,8 @@ package datatype
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -58,6 +60,7 @@ type BaseType struct {
 }
 
 var (
+	// Boolean: ToGo returns an object of type bool.
 	Boolean = BaseType{
 		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 			val, ok := dtProps["format"]
@@ -90,6 +93,7 @@ var (
 			return 0, nil
 		},
 	}
+	// String ------------------------------------------------------------------------------
 	String = BaseType{
 		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 			val, ok := dtProps["format"]
@@ -111,25 +115,38 @@ var (
 			return x.(string), nil
 		},
 		SqlType: "TEXT",
-		ToSql: func(dt *Datatype, x any) (any, error) {
-			return x.(string), nil
-		},
+		ToSql:   func(dt *Datatype, x any) (any, error) { return x.(string), nil },
 	}
+	// AnyURI: ToGo returns an object of type url.URL
 	AnyURI = BaseType{
 		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 			return map[string]any{}, nil
 		},
 		ToGo: func(dt *Datatype, s string) (any, error) {
-			return s, nil
+			u, err := url.Parse(s)
+			if err != nil {
+				return nil, err
+			}
+			// We don't want the rather lax parsing of url.Parse.
+			/*
+				_, err = url.ParseRequestURI(s)
+				if err != nil {
+					return nil, err
+				}
+			*/
+			return u, nil
 		},
 		ToString: func(dt *Datatype, x any) (string, error) {
-			return x.(string), nil
+			u := x.(*url.URL)
+			return u.String(), nil
 		},
 		SqlType: "TEXT",
 		ToSql: func(dt *Datatype, x any) (any, error) {
-			return x.(string), nil
+			u := x.(*url.URL)
+			return u.String(), nil
 		},
 	}
+	// Integer ----------------------------------------------------------------------------
 	Integer = BaseType{
 		GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 			return map[string]any{}, nil
@@ -161,7 +178,7 @@ var (
 			return val, nil
 		},
 		ToString: func(dt *Datatype, x any) (string, error) {
-			return x.(string), nil
+			return fmt.Sprintf("%g", x.(float64)), nil
 		},
 		SqlType: "REAL",
 		ToSql: func(dt *Datatype, x any) (any, error) {
@@ -206,7 +223,7 @@ var BaseTypes = map[string]BaseType{
 	"json":    Json,
 }
 
-func New(jsonCol map[string]interface{}) *Datatype {
+func New(jsonCol map[string]interface{}) (*Datatype, error) {
 	base := "string"
 	dtProps := map[string]any{}
 
@@ -220,12 +237,11 @@ func New(jsonCol map[string]interface{}) *Datatype {
 			dtProps = val.(map[string]any)
 		}
 	}
-	//fmt.Println(base)
 	dd, err := BaseTypes[base].GetDerivedDescription(dtProps)
 	if err != nil {
-		panic(err)
+		return nil, err
 	}
-	return &Datatype{Base: base, DerivedDescription: dd}
+	return &Datatype{Base: base, DerivedDescription: dd}, nil
 }
 
 func (dt *Datatype) ToString(val any) (string, error) {
