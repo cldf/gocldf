@@ -14,7 +14,7 @@ func TestCreatedb(t *testing.T) {
 	rootCmd.SetArgs([]string{"createdb", "../csvw/dataset/testdata/StructureDataset-metadata.json", dir + "/test.sqlite"})
 	rootCmd.Execute()
 
-	expected := `Bengali`
+	expected := `Loaded`
 	if !strings.Contains(actual.String(), expected) {
 		t.Errorf(`problem: "%q"" not in "%q""`, expected, actual.String())
 	}

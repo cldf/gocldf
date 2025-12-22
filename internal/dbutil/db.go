@@ -1,40 +1,21 @@
-package db
+package dbutil
 
 import (
 	"database/sql"
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"strings"
+
+	"gocldf/internal/pathutil"
 
 	_ "github.com/mattn/go-sqlite3"
 	"golang.org/x/mod/semver"
 )
 
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true // Path exists
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false // Specifically does not exist
-	}
-	return false
-}
-
-func WithDatabase(dbPath string, fn func(*sql.DB) error, recreate bool) error {
-	if dbPath != ":memory:" && (!pathExists(dbPath) || recreate) {
-		create, err := os.Create(dbPath)
-		if err != nil {
-			return err
-		}
-		defer func(create *os.File) {
-			err := create.Close()
-			if err != nil {
-				panic(err)
-			}
-		}(create)
+func WithDatabase(dbPath string, fn func(*sql.DB) error, mustExist bool) error {
+	if dbPath != ":memory:" && !pathutil.PathExists(dbPath) && mustExist {
+		return errors.New("database does not exist")
 	}
 
 	db, err := sql.Open("sqlite3", dbPath)
@@ -53,8 +34,7 @@ func WithDatabase(dbPath string, fn func(*sql.DB) error, recreate bool) error {
 	if err != nil {
 		return err
 	}
-	err = db.Close()
-	return err
+	return db.Close()
 }
 
 func WithTransaction(db *sql.DB, fn func(tx *sql.Tx) error) (err error) {
@@ -62,7 +42,7 @@ func WithTransaction(db *sql.DB, fn func(tx *sql.Tx) error) (err error) {
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() // Safely ignored if tx.Commit() is called first
 
 	err = fn(tx)
 	if err != nil {
@@ -142,6 +122,6 @@ func Query(db *sql.DB, query string, scanner func(*sql.Rows) error, args ...inte
 func QueryDatabase(dbPath string, query string, scanner func(*sql.Rows) error, args ...interface{}) error {
 	err := WithDatabase(dbPath, func(database *sql.DB) error {
 		return Query(database, query, scanner, args...)
-	}, false)
+	}, true)
 	return err
 }

@@ -2,21 +2,35 @@ package cmd
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"gocldf/csvw/dataset"
-	"gocldf/db"
+	"gocldf/internal/dbutil"
+	"gocldf/internal/pathutil"
 	"io"
+	"os"
+	"slices"
 
 	"github.com/spf13/cobra"
 )
 
-func createdb(out io.Writer, mdPath string, dbPath string) error {
+func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool) error {
+	if pathutil.PathExists(dbPath) {
+		if overwrite {
+			err := os.Remove(dbPath)
+			if err != nil {
+				return err
+			}
+		} else {
+			return errors.New("database already exists")
+		}
+	}
 	ds, err := dataset.GetLoadedDataset(mdPath)
 	if err != nil {
 		return err
 	}
-	err = db.WithDatabase(dbPath, func(database *sql.DB) error {
-		return db.WithTransaction(database, func(tx *sql.Tx) error {
+	err = dbutil.WithDatabase(dbPath, func(database *sql.DB) error {
+		return dbutil.WithTransaction(database, func(tx *sql.Tx) error {
 			schema, tableData, err := ds.ToSqlite(tx)
 			if err != nil {
 				return err
@@ -26,41 +40,53 @@ func createdb(out io.Writer, mdPath string, dbPath string) error {
 				return err
 			}
 			for _, tData := range tableData { // ... and the data.
-				db.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
+				dbutil.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
 			}
 			return nil
 		})
-	}, true)
+	}, false)
 	if err != nil {
 		return err
 	}
-	var count string
-	err = db.QueryDatabase(
+	// We run a query to make sure it worked
+	var tableNames []string
+	err = dbutil.QueryDatabase(
 		dbPath,
-		"select cldf_id from languagetable limit 1",
+		"SELECT name FROM sqlite_master WHERE type='table';",
 		func(rows *sql.Rows) error {
-			return rows.Scan(&count)
+			var tableName string
+			err := rows.Scan(&tableName)
+			if err != nil {
+				return err
+			}
+			tableNames = append(tableNames, tableName)
+			return nil
 		},
 	)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(out, count)
+	for _, tbl := range ds.Tables {
+		if !slices.Contains(tableNames, tbl.CanonicalName) {
+			return fmt.Errorf("table %s not found in database", tbl.CanonicalName)
+		}
+	}
+	fmt.Fprintf(out, "Loaded dataset at\n%v\ninto SQLite database at\n%v\n", mdPath, dbPath)
 	return nil
 }
 
-// var withMetadata bool
+var overwrite bool
 var createdbCmd = &cobra.Command{
 	Use:   "createdb DATASET DB_PATH",
 	Short: "Load CLDF dataset into a SQLite database",
 	Long:  "",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return createdb(cmd.OutOrStdout(), args[0], args[1])
+		return createdb(cmd.OutOrStdout(), args[0], args[1], overwrite)
 	},
 }
 
 func init() {
-	//createdbCmd.Flags().BoolVarP(&withMetadata, "metadata", "m", false, "Also print metadata")
+	createdbCmd.Flags().BoolVarP(&overwrite, "overwrite", "f", false, "Overwrite SQLite file if exists")
 	rootCmd.AddCommand(createdbCmd)
 }

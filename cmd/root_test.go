@@ -13,6 +13,8 @@ func Test_ExecuteRoot(t *testing.T) {
 	rootCmd.SetArgs([]string{"-h"})
 	rootCmd.Execute()
 
+	Execute()
+
 	expected := `createdb`
 	if !strings.Contains(actual.String(), expected) {
 		t.Errorf(`problem: "%q"" not in "%q""`, expected, actual.String())

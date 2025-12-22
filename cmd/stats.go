@@ -16,7 +16,7 @@ func stats(out io.Writer, mdPath string, withMetadata bool) error {
 		return err
 	}
 
-	fmt.Println(ds.MetadataPath + "\n")
+	fmt.Fprintln(out, ds.MetadataPath+"\n")
 	if withMetadata {
 		for key, val := range ds.Metadata {
 			s, ok := val.(string)
@@ -27,9 +27,9 @@ func stats(out io.Writer, mdPath string, withMetadata bool) error {
 				}
 				s = string(res)
 			}
-			fmt.Print(key + ":\t")
-			fmt.Println(s)
-			fmt.Println("")
+			fmt.Fprint(out, key+":\t")
+			fmt.Fprintln(out, s)
+			fmt.Fprintln(out, "")
 		}
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 1, ' ', tabwriter.Debug)

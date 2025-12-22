@@ -2,7 +2,7 @@ package dataset
 
 import (
 	"database/sql"
-	"gocldf/db"
+	"gocldf/internal/dbutil"
 	"testing"
 )
 
@@ -23,8 +23,8 @@ func TestDataset_simple(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	db.WithDatabase(":memory:", func(s *sql.DB) error {
-		err = db.WithTransaction(s, func(tx *sql.Tx) error {
+	dbutil.WithDatabase(":memory:", func(s *sql.DB) error {
+		err = dbutil.WithTransaction(s, func(tx *sql.Tx) error {
 			schema, tableData, err := ds.ToSqlite(tx)
 			if err != nil {
 				return err
@@ -34,7 +34,7 @@ func TestDataset_simple(t *testing.T) {
 				return err
 			}
 			for _, tData := range tableData { // ... and the data.
-				db.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
+				dbutil.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
 			}
 			return nil
 		})
@@ -42,7 +42,7 @@ func TestDataset_simple(t *testing.T) {
 			panic(err)
 		}
 		var countLanguages int
-		err = db.Query(
+		err = dbutil.Query(
 			s,
 			"select count(*) from languagetable",
 			func(rows *sql.Rows) error {
