@@ -52,6 +52,18 @@ func New(md_path string) (*Dataset, error) {
 	return &res, nil
 }
 
+func GetLoadedDataset(mdPath string) (ds *Dataset, err error) {
+	ds, err = New(mdPath)
+	if err != nil {
+		return nil, err
+	}
+	err = ds.LoadData()
+	if err != nil {
+		return nil, err
+	}
+	return ds, nil
+}
+
 func (dataset *Dataset) LoadData() error {
 	results := make(chan table.TableRead, len(dataset.Tables))
 	for _, tbl := range dataset.Tables {

@@ -12,13 +12,12 @@ var rootCmd = &cobra.Command{
 	Short: "gocldf is a cli tool to handle CLDF datasets",
 	Long:  "",
 	Run: func(cmd *cobra.Command, args []string) {
-
 	},
 }
 
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintf(os.Stderr, "Oops. An error while executing gocldf '%s'\n", err)
+		fmt.Fprintf(os.Stderr, "Error executing gocldf '%s'\n", err)
 		os.Exit(1)
 	}
 }

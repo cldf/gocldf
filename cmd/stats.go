@@ -1,27 +1,38 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
 	"gocldf/csvw/dataset"
-	"os"
+	"io"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
 )
 
-func stats(mdPath string) {
-	ds, err := dataset.New(mdPath)
+func stats(out io.Writer, mdPath string, withMetadata bool) error {
+	ds, err := dataset.GetLoadedDataset(mdPath)
 	if err != nil {
-		panic(err)
-	}
-	err = ds.LoadData()
-	if err != nil {
-		panic(err)
+		return err
 	}
 
-	//fmt.Println(ds.MetadataPath)
-	//fmt.Println(":")
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', tabwriter.Debug)
+	fmt.Println(ds.MetadataPath + "\n")
+	if withMetadata {
+		for key, val := range ds.Metadata {
+			s, ok := val.(string)
+			if !ok {
+				res, err := json.Marshal(val)
+				if err != nil {
+					return err
+				}
+				s = string(res)
+			}
+			fmt.Print(key + ":\t")
+			fmt.Println(s)
+			fmt.Println("")
+		}
+	}
+	w := tabwriter.NewWriter(out, 0, 0, 1, ' ', tabwriter.Debug)
 	// noinspection GoUnhandledErrorResultInspection
 	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "Filename", "Component", "Rows", "FKs")
 	// noinspection GoUnhandledErrorResultInspection
@@ -35,18 +46,22 @@ func stats(mdPath string) {
 	}
 	// noinspection GoUnhandledErrorResultInspection
 	w.Flush()
+	return nil
 }
 
+var withMetadata bool
 var statsCmd = &cobra.Command{
 	Use:   "stats DATASET",
 	Short: "Show summary statistics",
 	Long:  "",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
-		stats(args[0])
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, _ := cmd.Flags().GetString("basepath")
+		return stats(cmd.OutOrStderr(), cfg+args[0], withMetadata)
 	},
 }
 
 func init() {
+	statsCmd.Flags().BoolVarP(&withMetadata, "metadata", "m", false, "Also print metadata")
 	rootCmd.AddCommand(statsCmd)
 }
