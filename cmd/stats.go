@@ -3,7 +3,7 @@ package cmd
 import (
 	"encoding/json"
 	"fmt"
-	"gocldf/csvw/dataset"
+	"gocldf/csvw"
 	"io"
 	"text/tabwriter"
 
@@ -11,7 +11,7 @@ import (
 )
 
 func stats(out io.Writer, mdPath string, withMetadata bool) error {
-	ds, err := dataset.GetLoadedDataset(mdPath)
+	ds, err := csvw.GetLoadedDataset(mdPath)
 	if err != nil {
 		return err
 	}

@@ -1,4 +1,4 @@
-package table
+package csvw
 
 import (
 	"encoding/json"
@@ -6,6 +6,14 @@ import (
 	"strings"
 	"testing"
 )
+
+func makeDialect() *Dialect {
+	res, err := NewDialect(map[string]any{"key": 1})
+	if err != nil {
+		panic(err)
+	}
+	return res
+}
 
 func makeTable(fname string, load bool) Table {
 	data, err := os.ReadFile("testdata/" + fname)
@@ -17,13 +25,13 @@ func makeTable(fname string, load bool) Table {
 	if err != nil {
 		panic(err)
 	}
-	tbl, err := New(result)
+	tbl, err := NewTable(result)
 	if err != nil {
 		panic(err)
 	}
 	if load {
 		result := make(chan TableRead, 1)
-		go tbl.Read("testdata/", result)
+		go tbl.Read("testdata/", makeDialect(), result)
 		_ = <-result
 	}
 	return *tbl
@@ -41,7 +49,7 @@ func TestTable_simple(t *testing.T) {
 		t.Errorf(`problem: %q vs %q`, len(tbl.CanonicalName), "table_simple.csv")
 	}
 	result := make(chan TableRead, 1)
-	go tbl.Read("testdata/", result)
+	go tbl.Read("testdata/", makeDialect(), result)
 	tableRead := <-result
 	if tableRead.Err != nil || tableRead.Url != "table_simple.csv" {
 		t.Errorf(`problem`)
@@ -60,6 +68,29 @@ func TestTable_simple(t *testing.T) {
 	}
 	if tbl.Data[2]["Separated"].([]string)[0] != "z" {
 		t.Errorf(`problem`)
+	}
+}
+
+func TestTable_with_dialect(t *testing.T) {
+	tbl := makeTable("table_with_dialect.json", true)
+	if tbl.Dialect == nil {
+		t.Errorf(`problem: expected dialect`)
+	}
+	if len(tbl.Data) != 2 {
+		t.Errorf(`problem: expected %q rows got %q`, 2, len(tbl.Data))
+	}
+	if len(tbl.Data[0]) != 3 {
+		t.Errorf(`problem: expected %q columns got %q`, 3, len(tbl.Data[0]))
+	}
+	if tbl.Data[1]["Col"].(string) != "y " {
+		t.Errorf(`problem: expected "y " columns got %q`, tbl.Data[1]["Col"].(string))
+	}
+}
+
+func TestTable_with_dialect2(t *testing.T) {
+	tbl := makeTable("table_with_dialect2.json", true)
+	if tbl.Data[1]["Col"].(string) != "y" {
+		t.Errorf(`problem: expected "y " columns got %q`, tbl.Data[1]["Col"].(string))
 	}
 }
 

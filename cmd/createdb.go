@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"gocldf/csvw/dataset"
+	"gocldf/csvw"
 	"gocldf/internal/dbutil"
 	"gocldf/internal/pathutil"
 	"io"
@@ -25,13 +25,13 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool) error
 			return errors.New("database already exists")
 		}
 	}
-	ds, err := dataset.GetLoadedDataset(mdPath)
+	ds, err := csvw.GetLoadedDataset(mdPath)
 	if err != nil {
 		return err
 	}
 	err = dbutil.WithDatabase(dbPath, func(database *sql.DB) error {
 		return dbutil.WithTransaction(database, func(tx *sql.Tx) error {
-			schema, tableData, err := ds.ToSqlite(tx)
+			schema, tableData, err := ds.ToSqlite()
 			if err != nil {
 				return err
 			}
@@ -87,6 +87,7 @@ var createdbCmd = &cobra.Command{
 }
 
 func init() {
+	// FIXME: add flag about check constraints
 	createdbCmd.Flags().BoolVarP(&overwrite, "overwrite", "f", false, "Overwrite SQLite file if exists")
 	rootCmd.AddCommand(createdbCmd)
 }

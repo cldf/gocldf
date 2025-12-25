@@ -11,7 +11,7 @@ func TestCreatedb(t *testing.T) {
 	actual := new(bytes.Buffer)
 	rootCmd.SetOut(actual)
 	rootCmd.SetErr(actual)
-	rootCmd.SetArgs([]string{"createdb", "../csvw/dataset/testdata/StructureDataset-metadata.json", dir + "/test.sqlite"})
+	rootCmd.SetArgs([]string{"createdb", "../csvw/testdata/StructureDataset-metadata.json", dir + "/test.sqlite"})
 	rootCmd.Execute()
 
 	expected := `Loaded`

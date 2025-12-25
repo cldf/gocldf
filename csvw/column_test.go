@@ -1,4 +1,4 @@
-package column
+package csvw
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ func makeCol(jsonString string) Column {
 	if err != nil {
 		panic(err)
 	}
-	col, err := New(0, result)
+	col, err := NewColumn(0, result)
 	if err != nil {
 		panic(err)
 	}

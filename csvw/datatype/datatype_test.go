@@ -71,6 +71,10 @@ func TestDatatype_ToGo(t *testing.T) {
 			"5",
 			func(x any) bool { return x.(int) == 5 }},
 		{
+			`"float"`,
+			"5.0",
+			func(x any) bool { return x.(float64) == 5.0 }},
+		{
 			`"decimal"`,
 			"1.1",
 			func(x any) bool { return x.(float64) == 1.1 }},
@@ -100,6 +104,13 @@ func TestDatatype_ToGoError(t *testing.T) {
 		{`"boolean"`, "x"},
 		{`"integer"`, "x"},
 		{`"decimal"`, "1.x"},
+		{`{"base":"decimal","minimum":-2.2}`, "-2.3"},
+		{`{"base":"decimal","minimum":"-2.2"}`, "-2.3"},
+		{`{"base":"decimal","minExclusive":"0"}`, "0"},
+		{`{"base":"integer","maxExclusive":"5"}`, "5"},
+		{`{"base":"string","length":3}`, "ab"},
+		{`{"base":"string","minLength":3}`, "ab"},
+		{`{"base":"string","maxLength":3}`, "abcd"},
 		{`"anyURI"`, "12:/example.org"},
 	}
 	for _, tt := range tests {

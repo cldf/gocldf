@@ -1,4 +1,4 @@
-package table
+package csvw
 
 import (
 	"archive/zip"
@@ -7,12 +7,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gocldf/csvw/column"
+	"gocldf/internal/pathutil"
 	"io"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+	"unicode"
 )
 
 type Reference struct {
@@ -31,16 +32,17 @@ type Table struct {
 	Comp          string
 	CanonicalName string
 	PrimaryKey    []string
-	Columns       []*column.Column
+	Columns       []*Column
 	Data          []map[string]interface{}
 	ForeignKeys   []*ForeignKey
+	Dialect       *Dialect
 }
 
-func New(jsonTable map[string]interface{}) (*Table, error) {
+func NewTable(jsonTable map[string]interface{}) (*Table, error) {
 	jsonCols := jsonTable["tableSchema"].(map[string]interface{})["columns"].([]interface{})
-	columns := make([]*column.Column, len(jsonCols))
+	columns := make([]*Column, len(jsonCols))
 	for i, jsonCol := range jsonCols {
-		col, err := column.New(i, jsonCol.(map[string]interface{}))
+		col, err := NewColumn(i, jsonCol.(map[string]interface{}))
 		if err != nil {
 			return nil, err
 		}
@@ -83,12 +85,26 @@ func New(jsonTable map[string]interface{}) (*Table, error) {
 			}
 		}
 	}
+	var (
+		dialect *Dialect
+		err     error
+	)
+	_, ok = jsonTable["dialect"]
+	if ok {
+		dialect, err = NewDialect(jsonTable)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		dialect = nil
+	}
 	res := &Table{
 		Url:         jsonTable["url"].(string),
 		Columns:     columns,
 		Data:        []map[string]interface{}{},
 		ForeignKeys: fks,
 		PrimaryKey:  pk,
+		Dialect:     dialect,
 	}
 	val, ok := jsonTable["dc:conformsTo"]
 	if ok {
@@ -104,10 +120,16 @@ func New(jsonTable map[string]interface{}) (*Table, error) {
 }
 
 // Read a row represented as slice of strings into Go objects.
-func (tbl *Table) readRow(fields []string) (map[string]interface{}, error) {
+func (tbl *Table) readRow(fields []string, dialect *Dialect) (map[string]interface{}, error) {
 	row := make(map[string]interface{}, len(fields))
 	for i := 0; i < len(fields); i++ {
-		val, err := tbl.Columns[i].ToGo(fields[i], true)
+		field := fields[i]
+		if dialect.trim == "true" {
+			field = strings.TrimSpace(field)
+		} else if dialect.trim == "end" {
+			field = strings.TrimRightFunc(field, unicode.IsSpace)
+		}
+		val, err := tbl.Columns[i].ToGo(field, true)
 		if err != nil {
 			return nil, err
 		}
@@ -119,18 +141,6 @@ func (tbl *Table) readRow(fields []string) (map[string]interface{}, error) {
 type TableRead struct {
 	Url string
 	Err error
-}
-
-func exists(path string) bool {
-	_, err := os.Stat(path)
-	if err == nil {
-		return true // File or directory exists
-	}
-	if errors.Is(err, os.ErrNotExist) {
-		return false // Specifically does not exist
-	}
-	// Any other error means we can't confirm existence (e.g., permission denied)
-	return false
 }
 
 func readZipped(fp string) (bytes []byte, err error) {
@@ -161,10 +171,11 @@ func readZipped(fp string) (bytes []byte, err error) {
 	return contentBytes, nil
 }
 
-func (tbl *Table) Read(dir string, ch chan<- TableRead) {
+func (tbl *Table) Read(dir string, dialect *Dialect, ch chan<- TableRead) {
+	var reader *csv.Reader
 	fp := filepath.Join(dir, tbl.Url)
 	zipped := false
-	if !exists(fp) {
+	if !pathutil.PathExists(fp) {
 		fp += ".zip"
 		zipped = true
 	}
@@ -178,7 +189,7 @@ func (tbl *Table) Read(dir string, ch chan<- TableRead) {
 			ch <- TableRead{tbl.Url, err}
 			return
 		}
-		rows, err = csv.NewReader(bytes.NewReader(zippedBytes)).ReadAll()
+		reader = csv.NewReader(bytes.NewReader(zippedBytes))
 	} else {
 		file, err := os.Open(fp)
 		if err != nil {
@@ -192,16 +203,21 @@ func (tbl *Table) Read(dir string, ch chan<- TableRead) {
 				return
 			}
 		}(file)
-		rows, err = csv.NewReader(file).ReadAll() // returns [][]string
-		if err != nil {
-			ch <- TableRead{tbl.Url, err}
-			return
-		}
+		reader = csv.NewReader(file)
+	}
+	if tbl.Dialect != nil {
+		dialect = tbl.Dialect
+	}
+	dialect.ConfigureCsvReader(reader)
+	rows, err = reader.ReadAll()
+	if err != nil {
+		ch <- TableRead{tbl.Url, err}
+		return
 	}
 
 	for rowIndex, row := range rows {
-		if rowIndex > 0 {
-			val, err := tbl.readRow(row)
+		if !dialect.header || (rowIndex > 0) { // FIXME: take headerRowCount and skipRows into account!
+			val, err := tbl.readRow(row, dialect)
 			if err != nil {
 				ch <- TableRead{tbl.Url, err}
 				return
@@ -212,8 +228,8 @@ func (tbl *Table) Read(dir string, ch chan<- TableRead) {
 	ch <- TableRead{tbl.Url, err}
 }
 
-func (tbl *Table) NameToCol() map[string]*column.Column {
-	nameToCol := make(map[string]*column.Column, len(tbl.Columns))
+func (tbl *Table) NameToCol() map[string]*Column {
+	nameToCol := make(map[string]*Column, len(tbl.Columns))
 	for _, col := range tbl.Columns {
 		nameToCol[col.Name] = col
 	}
@@ -311,7 +327,9 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
 			if i == 0 {
 				clause += "\t"
 			}
-			clauses = append(clauses, clause+fmt.Sprintf("`%v`\t%v", col.CanonicalName, col.Datatype.SqlType()))
+			// FIXME: add CHECK constraints!
+			clauses = append(clauses, clause+col.sqlCreate())
+			//clauses = append(clauses, clause+fmt.Sprintf("`%v`\t%v", col.CanonicalName, col.Datatype.SqlType()))
 		}
 	}
 	clauses = append(clauses, strings.Join(pk, ""))
@@ -359,7 +377,7 @@ func (tbl *Table) RowsToSql() (rows [][]any, colNames []string, err error) {
 	for _, fk := range tbl.ManyToMany() {
 		manyToMany = append(manyToMany, fk.ColumnReference[0])
 	}
-	colMap := make(map[string]*column.Column)
+	colMap := make(map[string]*Column)
 	listValued := make(map[string]string)
 	for _, col := range tbl.Columns {
 		if !slices.Contains(manyToMany, col.Name) {

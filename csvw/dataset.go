@@ -1,11 +1,9 @@
-package dataset
+package csvw
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gocldf/csvw/table"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,11 +13,12 @@ import (
 type Dataset struct {
 	MetadataPath string
 	Metadata     map[string]interface{}
-	Tables       map[string]*table.Table
+	Dialect      *Dialect
+	Tables       map[string]*Table
 }
 
-func New(md_path string) (*Dataset, error) {
-	data, err := os.ReadFile(md_path)
+func NewDataset(mdPath string) (*Dataset, error) {
+	data, err := os.ReadFile(mdPath)
 	if err != nil {
 		return nil, err
 	}
@@ -37,13 +36,17 @@ func New(md_path string) (*Dataset, error) {
 		}
 		metadata[k] = v
 	}
-
+	dialect, err := NewDialect(result)
+	if err != nil {
+		return nil, err
+	}
 	res := Dataset{
-		md_path,
+		mdPath,
 		metadata,
-		make(map[string]*table.Table)}
+		dialect,
+		make(map[string]*Table)}
 	for _, value := range result["tables"].([]interface{}) {
-		tbl, err := table.New(value.(map[string]interface{}))
+		tbl, err := NewTable(value.(map[string]interface{}))
 		if err != nil {
 			return nil, err
 		}
@@ -53,7 +56,7 @@ func New(md_path string) (*Dataset, error) {
 }
 
 func GetLoadedDataset(mdPath string) (ds *Dataset, err error) {
-	ds, err = New(mdPath)
+	ds, err = NewDataset(mdPath)
 	if err != nil {
 		return nil, err
 	}
@@ -65,9 +68,9 @@ func GetLoadedDataset(mdPath string) (ds *Dataset, err error) {
 }
 
 func (dataset *Dataset) LoadData() error {
-	results := make(chan table.TableRead, len(dataset.Tables))
+	results := make(chan TableRead, len(dataset.Tables))
 	for _, tbl := range dataset.Tables {
-		go tbl.Read(filepath.Dir(dataset.MetadataPath), results)
+		go tbl.Read(filepath.Dir(dataset.MetadataPath), dataset.Dialect, results)
 	}
 	for i := 0; i < len(dataset.Tables); i++ {
 		tableRead := <-results
@@ -79,8 +82,8 @@ func (dataset *Dataset) LoadData() error {
 	return nil
 }
 
-func (dataset *Dataset) UrlToTable() map[string]*table.Table {
-	res := map[string]*table.Table{}
+func (dataset *Dataset) UrlToTable() map[string]*Table {
+	res := map[string]*Table{}
 	for _, tbl := range dataset.Tables {
 		res[tbl.Url] = tbl
 	}
@@ -95,11 +98,13 @@ func (dataset *Dataset) UrlToCanonicalName() map[string]string {
 	return res
 }
 
-func (dataset *Dataset) orderedTables() (map[string]*table.Table, error) {
-	var urlToName = dataset.UrlToCanonicalName()
-	// Determine the order in which to create the tables
-	tables := []string{}
-	orderedTables := []string{}
+func (dataset *Dataset) orderedTables() (map[string]*Table, error) {
+	var (
+		urlToName = dataset.UrlToCanonicalName()
+		// Determine the order in which to create the tables
+		tables        []string
+		orderedTables []string
+	)
 	for _, tbl := range dataset.Tables {
 		tables = append(tables, tbl.Url)
 	}
@@ -138,7 +143,7 @@ func (dataset *Dataset) orderedTables() (map[string]*table.Table, error) {
 			tables = slices.Delete(tables, delIndex, delIndex+1)
 		}
 	}
-	orderedTableMap := make(map[string]*table.Table, len(orderedTables))
+	orderedTableMap := make(map[string]*Table, len(orderedTables))
 	for _, url := range orderedTables {
 		tbl, ok := dataset.Tables[urlToName[url]]
 		if ok {
@@ -164,9 +169,8 @@ func (dataset *Dataset) sqlSchema() (string, error) {
 		schema, err := tbl.SqlCreate(urlToTable)
 		if err != nil {
 			return "", err
-		} else {
-			res = append(res, schema)
 		}
+		res = append(res, schema)
 	}
 	for _, tbl := range orderedTableMap {
 		for _, fk := range tbl.ManyToMany() {
@@ -183,8 +187,8 @@ type TableData struct {
 }
 
 // Function ToSqlite returns the data necessary to load the dataset into a SQLite database.
-func (dataset *Dataset) ToSqlite(tx *sql.Tx) (string, []TableData, error) {
-	var tableData = []TableData{}
+func (dataset *Dataset) ToSqlite() (string, []TableData, error) {
+	var tableData []TableData
 
 	schema, err := dataset.sqlSchema()
 	if err != nil {

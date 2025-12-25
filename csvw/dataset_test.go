@@ -1,4 +1,4 @@
-package dataset
+package csvw
 
 import (
 	"database/sql"
@@ -7,7 +7,7 @@ import (
 )
 
 func makeDataset(fname string) *Dataset {
-	ds, err := New("testdata/" + fname)
+	ds, err := NewDataset("testdata/" + fname)
 	if err != nil {
 		panic(err)
 	}
@@ -25,7 +25,7 @@ func TestDataset_simple(t *testing.T) {
 	}
 	dbutil.WithDatabase(":memory:", func(s *sql.DB) error {
 		err = dbutil.WithTransaction(s, func(tx *sql.Tx) error {
-			schema, tableData, err := ds.ToSqlite(tx)
+			schema, tableData, err := ds.ToSqlite()
 			if err != nil {
 				return err
 			}

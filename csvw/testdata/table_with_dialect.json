@@ -1,0 +1,28 @@
+{
+  "url": "table_with_dialect.csv",
+  "dialect": {
+    "header": false,
+    "delimiter": ";",
+    "trim": "start",
+    "commentPrefix": "#"
+  },
+  "tableSchema": {
+    "columns": [
+      {
+        "datatype": {
+          "base": "string",
+          "format": "[a-zA-Z0-9_\\-]+"
+        },
+        "name": "ID"
+      },
+      {
+        "datatype": {
+          "base": "string"
+        },
+        "name": "Col"
+      },
+      {"name":  "z"}
+    ],
+    "primaryKey": ["ID"]
+  }
+}

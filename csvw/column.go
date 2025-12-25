@@ -1,6 +1,7 @@
-package column
+package csvw
 
 import (
+	"fmt"
 	"gocldf/csvw/datatype"
 	"slices"
 	"strconv"
@@ -16,7 +17,7 @@ type Column struct {
 	Null          []string
 }
 
-func New(index int, jsonCol map[string]interface{}) (*Column, error) {
+func NewColumn(index int, jsonCol map[string]interface{}) (*Column, error) {
 	var (
 		name          string = ""
 		purl          string = ""
@@ -101,4 +102,12 @@ func (column *Column) ToString(x any) (string, error) {
 		return column.Null[0], nil
 	}
 	return column.Datatype.ToString(x)
+}
+
+func (column *Column) sqlCreate() string {
+	res := fmt.Sprintf("`%v`\t%v", column.CanonicalName, column.Datatype.SqlType())
+	if column.Datatype.Minimum != nil {
+		res += fmt.Sprintf(" CHECK(`%v` >= %v)", column.CanonicalName, column.Datatype.Minimum)
+	}
+	return res
 }
