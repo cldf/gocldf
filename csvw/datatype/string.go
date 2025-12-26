@@ -14,8 +14,8 @@ var String = BaseType{
 		}
 		return map[string]any{"regex": nil}, nil
 	},
-	ToGo: func(dt *Datatype, s string, checkConstraints bool) (any, error) {
-		if checkConstraints {
+	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
+		if !noChecks {
 			if dt.Length != -1 && len(s) != dt.Length {
 				return nil, errors.New("invalid length")
 			}

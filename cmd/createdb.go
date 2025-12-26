@@ -14,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool) error {
+func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChecks bool) error {
 	if pathutil.PathExists(dbPath) {
 		if overwrite {
 			err := os.Remove(dbPath)
@@ -25,13 +25,13 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool) error
 			return errors.New("database already exists")
 		}
 	}
-	ds, err := csvw.GetLoadedDataset(mdPath)
+	ds, err := csvw.GetLoadedDataset(mdPath, noChecks)
 	if err != nil {
 		return err
 	}
 	err = dbutil.WithDatabase(dbPath, func(database *sql.DB) error {
 		return dbutil.WithTransaction(database, func(tx *sql.Tx) error {
-			schema, tableData, err := ds.ToSqlite()
+			schema, tableData, err := ds.ToSqlite(noChecks)
 			if err != nil {
 				return err
 			}
@@ -44,7 +44,7 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool) error
 			}
 			return nil
 		})
-	}, false)
+	}, false, !noChecks)
 	if err != nil {
 		return err
 	}
@@ -75,19 +75,27 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool) error
 	return nil
 }
 
-var overwrite bool
+var (
+	overwrite bool
+	noChecks  bool
+)
 var createdbCmd = &cobra.Command{
 	Use:   "createdb DATASET DB_PATH",
 	Short: "Load CLDF dataset into a SQLite database",
 	Long:  "",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return createdb(cmd.OutOrStdout(), args[0], args[1], overwrite)
+		return createdb(cmd.OutOrStdout(), args[0], args[1], overwrite, noChecks)
 	},
 }
 
 func init() {
-	// FIXME: add flag about check constraints
 	createdbCmd.Flags().BoolVarP(&overwrite, "overwrite", "f", false, "Overwrite SQLite file if exists")
+	createdbCmd.Flags().BoolVarP(
+		&noChecks,
+		"nochecks",
+		"n",
+		false,
+		"Do not enforce column constraints on read and write. Can be used to speed up db creation for datasets with known validity.")
 	rootCmd.AddCommand(createdbCmd)
 }

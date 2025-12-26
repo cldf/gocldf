@@ -3,7 +3,7 @@
   "dialect": {
     "header": false,
     "delimiter": ";",
-    "trim": "true",
+    "trim": "end",
     "commentPrefix": "#"
   },
   "tableSchema": {

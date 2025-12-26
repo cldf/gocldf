@@ -55,22 +55,22 @@ func NewDataset(mdPath string) (*Dataset, error) {
 	return &res, nil
 }
 
-func GetLoadedDataset(mdPath string) (ds *Dataset, err error) {
+func GetLoadedDataset(mdPath string, noChecks bool) (ds *Dataset, err error) {
 	ds, err = NewDataset(mdPath)
 	if err != nil {
 		return nil, err
 	}
-	err = ds.LoadData()
+	err = ds.LoadData(noChecks)
 	if err != nil {
 		return nil, err
 	}
 	return ds, nil
 }
 
-func (dataset *Dataset) LoadData() error {
+func (dataset *Dataset) LoadData(noChecks bool) error {
 	results := make(chan TableRead, len(dataset.Tables))
 	for _, tbl := range dataset.Tables {
-		go tbl.Read(filepath.Dir(dataset.MetadataPath), dataset.Dialect, results)
+		go tbl.Read(filepath.Dir(dataset.MetadataPath), dataset.Dialect, noChecks, results)
 	}
 	for i := 0; i < len(dataset.Tables); i++ {
 		tableRead := <-results
@@ -98,7 +98,7 @@ func (dataset *Dataset) UrlToCanonicalName() map[string]string {
 	return res
 }
 
-func (dataset *Dataset) orderedTables() (map[string]*Table, error) {
+func (dataset *Dataset) orderedTables() ([]*Table, error) {
 	var (
 		urlToName = dataset.UrlToCanonicalName()
 		// Determine the order in which to create the tables
@@ -143,11 +143,11 @@ func (dataset *Dataset) orderedTables() (map[string]*Table, error) {
 			tables = slices.Delete(tables, delIndex, delIndex+1)
 		}
 	}
-	orderedTableMap := make(map[string]*Table, len(orderedTables))
-	for _, url := range orderedTables {
+	orderedTableMap := make([]*Table, len(orderedTables))
+	for i, url := range orderedTables {
 		tbl, ok := dataset.Tables[urlToName[url]]
 		if ok {
-			orderedTableMap[url] = tbl
+			orderedTableMap[i] = tbl
 		} else {
 			return orderedTableMap, fmt.Errorf("table %s not found", url)
 		}
@@ -155,7 +155,7 @@ func (dataset *Dataset) orderedTables() (map[string]*Table, error) {
 	return orderedTableMap, nil
 }
 
-func (dataset *Dataset) sqlSchema() (string, error) {
+func (dataset *Dataset) sqlSchema(noChecks bool) (string, error) {
 	var (
 		res        []string
 		urlToTable = dataset.UrlToTable()
@@ -166,7 +166,7 @@ func (dataset *Dataset) sqlSchema() (string, error) {
 	}
 
 	for _, tbl := range orderedTableMap {
-		schema, err := tbl.SqlCreate(urlToTable)
+		schema, err := tbl.sqlCreate(urlToTable, noChecks)
 		if err != nil {
 			return "", err
 		}
@@ -174,7 +174,7 @@ func (dataset *Dataset) sqlSchema() (string, error) {
 	}
 	for _, tbl := range orderedTableMap {
 		for _, fk := range tbl.ManyToMany() {
-			res = append(res, tbl.SqlCreateAssociationTable(*fk, urlToTable))
+			res = append(res, tbl.sqlCreateAssociationTable(*fk, urlToTable))
 		}
 	}
 	return strings.Join(res, "\n"), nil
@@ -187,10 +187,10 @@ type TableData struct {
 }
 
 // Function ToSqlite returns the data necessary to load the dataset into a SQLite database.
-func (dataset *Dataset) ToSqlite() (string, []TableData, error) {
+func (dataset *Dataset) ToSqlite(noChecks bool) (string, []TableData, error) {
 	var tableData []TableData
 
-	schema, err := dataset.sqlSchema()
+	schema, err := dataset.sqlSchema(noChecks)
 	if err != nil {
 		return "", tableData, err
 	}
@@ -201,7 +201,7 @@ func (dataset *Dataset) ToSqlite() (string, []TableData, error) {
 	urlToTable := dataset.UrlToTable()
 
 	for _, tbl := range orderedTables {
-		rows, colNames, err := tbl.RowsToSql()
+		rows, colNames, err := tbl.rowsToSql()
 		if err != nil {
 			return "", tableData, err
 		}
@@ -209,7 +209,7 @@ func (dataset *Dataset) ToSqlite() (string, []TableData, error) {
 	}
 	for _, tbl := range orderedTables {
 		for _, fk := range tbl.ManyToMany() {
-			rows, tableName, colNames, err := tbl.AssociationTableRowsToSql(fk, urlToTable)
+			rows, tableName, colNames, err := tbl.associationTableRowsToSql(fk, urlToTable)
 			if err != nil {
 				return "", tableData, err
 			}

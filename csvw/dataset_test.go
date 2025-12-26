@@ -19,13 +19,13 @@ func TestDataset_simple(t *testing.T) {
 	if len(ds.Tables) != 4 {
 		t.Errorf(`problem: %q vs %q`, len(ds.Tables), 4)
 	}
-	err := ds.LoadData()
+	err := ds.LoadData(false)
 	if err != nil {
 		panic(err)
 	}
 	dbutil.WithDatabase(":memory:", func(s *sql.DB) error {
 		err = dbutil.WithTransaction(s, func(tx *sql.Tx) error {
-			schema, tableData, err := ds.ToSqlite()
+			schema, tableData, err := ds.ToSqlite(false)
 			if err != nil {
 				return err
 			}
@@ -55,5 +55,5 @@ func TestDataset_simple(t *testing.T) {
 			t.Errorf(`problem: %q vs %q`, countLanguages, 29)
 		}
 		return nil
-	}, false)
+	}, false, true)
 }

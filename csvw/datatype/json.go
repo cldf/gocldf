@@ -6,7 +6,7 @@ var Json = BaseType{
 	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		return map[string]any{}, nil
 	},
-	ToGo: func(dt *Datatype, s string, checkConstraints bool) (any, error) {
+	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		var result any
 		err := json.Unmarshal([]byte(s), &result)
 		if err != nil {

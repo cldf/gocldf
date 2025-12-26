@@ -6,46 +6,26 @@ import (
 	"strconv"
 )
 
-func getOptionalFloat(s string) (float64, bool) {
-	if s == "" {
-		return 0, false
-	}
-	num, _ := strconv.ParseFloat(s, 64)
-	return num, true
-}
-
 var Decimal = BaseType{
 	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		return map[string]any{}, nil
 	},
-	ToGo: func(dt *Datatype, s string, checkConstraints bool) (any, error) {
+	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		val, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return nil, err
 		}
-		if checkConstraints {
-			num, ok := dt.Minimum.(float64)
-			if ok && val < num {
+		if !noChecks {
+			if dt.MinInclusive != nil && val < dt.MinInclusive.(float64) {
 				return nil, errors.New("value smaller than minimum")
 			}
-			num, ok = dt.Maximum.(float64)
-			if ok && val > num {
+			if dt.MaxInclusive != nil && val > dt.MaxInclusive.(float64) {
 				return nil, errors.New("value greater than maximum")
 			}
-			num, ok = getOptionalFloat(dt.MinInclusive)
-			if ok && val < num {
-				return nil, errors.New("value smaller than minimum")
-			}
-			num, ok = getOptionalFloat(dt.MaxInclusive)
-			if ok && val > num {
-				return nil, errors.New("value greater than maximum")
-			}
-			num, ok = getOptionalFloat(dt.MinExclusive)
-			if ok && val <= num {
+			if dt.MinExclusive != nil && val <= dt.MinExclusive.(float64) {
 				return nil, errors.New("value smaller than exclusive minimum")
 			}
-			num, ok = getOptionalFloat(dt.MaxExclusive)
-			if ok && val >= num {
+			if dt.MaxExclusive != nil && val >= dt.MaxExclusive.(float64) {
 				return nil, errors.New("value greater than exclusive maximum")
 			}
 		}

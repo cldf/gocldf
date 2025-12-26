@@ -56,3 +56,19 @@ func GetBool(jsonObject map[string]any, attr string, defaultValue bool) (bool, e
 	}
 	return defaultValue, nil
 }
+
+func GetStringArray(jsonObject map[string]any, attr string) ([]string, error) {
+	res := make([]string, 0)
+	val, ok := jsonObject[attr]
+	if ok {
+		for _, n := range val.([]interface{}) {
+			s, ok := n.(string)
+			if ok {
+				res = append(res, s)
+			} else {
+				return res, errors.New(fmt.Sprintf("invalid %v", attr))
+			}
+		}
+	}
+	return res, nil
+}

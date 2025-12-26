@@ -11,7 +11,7 @@ import (
 )
 
 func stats(out io.Writer, mdPath string, withMetadata bool) error {
-	ds, err := csvw.GetLoadedDataset(mdPath)
+	ds, err := csvw.GetLoadedDataset(mdPath, false)
 	if err != nil {
 		return err
 	}

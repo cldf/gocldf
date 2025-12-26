@@ -24,32 +24,32 @@ func makeDatatype(jsonString string) Datatype {
 func TestDatatype_String(t *testing.T) {
 	dt := makeDatatype(`{"base":"string"}`)
 	want := "mystring"
-	if val, err := dt.ToGo("mystring"); err != nil {
+	if val, err := dt.ToGo("mystring", false); err != nil {
 		if val != want {
 			t.Errorf(`problem`)
 		}
 	}
 	dt = makeDatatype(`{"base":"string","format":"^[s]+$"}`)
 	want = "sss"
-	if val, err := dt.ToGo("sss"); err != nil {
+	if val, err := dt.ToGo("sss", false); err != nil {
 		if val != want {
 			t.Errorf(`problem`)
 		}
 	}
-	if _, err := dt.ToGo("sst"); err == nil {
+	if _, err := dt.ToGo("sst", false); err == nil {
 		t.Errorf("problem")
 	}
 }
 
 func TestDatatype_Boolean(t *testing.T) {
 	dt := makeDatatype(`{"base":"boolean"}`)
-	if val, err := dt.ToGo("false"); err != nil {
+	if val, err := dt.ToGo("false", true); err != nil {
 		if val != false {
 			t.Errorf(`problem`)
 		}
 	}
 	dt = makeDatatype(`{"base":"boolean","format":"yes|no"}`)
-	if val, err := dt.ToGo("no"); err != nil {
+	if val, err := dt.ToGo("no", false); err != nil {
 		if val != false {
 			t.Errorf(`problem`)
 		}
@@ -86,7 +86,7 @@ func TestDatatype_ToGo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("ToGo", func(t *testing.T) {
 			dt := makeDatatype(tt.datatype)
-			val, err := dt.ToGo(tt.input)
+			val, err := dt.ToGo(tt.input, true)
 			if err == nil {
 				if !tt.assertion(val) {
 					t.Errorf(`problem: %v vs %v`, tt.input, val)
@@ -105,7 +105,7 @@ func TestDatatype_ToGoError(t *testing.T) {
 		{`"integer"`, "x"},
 		{`"decimal"`, "1.x"},
 		{`{"base":"decimal","minimum":-2.2}`, "-2.3"},
-		{`{"base":"decimal","minimum":"-2.2"}`, "-2.3"},
+		{`{"base":"decimal","minInclusive":-2.2}`, "-2.3"},
 		{`{"base":"decimal","minExclusive":"0"}`, "0"},
 		{`{"base":"integer","maxExclusive":"5"}`, "5"},
 		{`{"base":"string","length":3}`, "ab"},
@@ -116,7 +116,7 @@ func TestDatatype_ToGoError(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("ToGo", func(t *testing.T) {
 			dt := makeDatatype(tt.datatype)
-			val, err := dt.ToGo(tt.input)
+			val, err := dt.ToGo(tt.input, false)
 			if err == nil {
 				t.Errorf(`problem: %v vs %v`, tt.input, val)
 			}
@@ -140,7 +140,7 @@ func TestDatatype_RoundtripValue(t *testing.T) {
 	for _, tt := range tests {
 		t.Run("Roundtrip", func(t *testing.T) {
 			dt := makeDatatype(tt.datatype)
-			val, err := dt.ToGo(tt.input)
+			val, err := dt.ToGo(tt.input, true)
 			if err == nil {
 				if val, err := dt.ToString(val); err == nil {
 					if val != tt.input {

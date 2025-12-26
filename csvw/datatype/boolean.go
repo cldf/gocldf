@@ -15,7 +15,7 @@ var Boolean = BaseType{
 		}
 		return map[string]any{"true": []string{"true", "1"}, "false": []string{"false", "0"}}, nil
 	},
-	ToGo: func(dt *Datatype, s string, checkConstraints bool) (any, error) {
+	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		if slices.Contains(dt.DerivedDescription["true"].([]string), s) {
 			return true, nil
 		}

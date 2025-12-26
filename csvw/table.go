@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"gocldf/internal/jsonutil"
 	"gocldf/internal/pathutil"
 	"io"
 	"os"
@@ -36,10 +37,18 @@ type Table struct {
 	Data          []map[string]interface{}
 	ForeignKeys   []*ForeignKey
 	Dialect       *Dialect
+	trimmer       func(string) string
 }
 
 func NewTable(jsonTable map[string]interface{}) (*Table, error) {
-	jsonCols := jsonTable["tableSchema"].(map[string]interface{})["columns"].([]interface{})
+	var (
+		dialect *Dialect
+		err     error
+		trimmer = func(s string) string { return s }
+	)
+	tableSchema := jsonTable["tableSchema"].(map[string]interface{})
+
+	jsonCols := tableSchema["columns"].([]interface{})
 	columns := make([]*Column, len(jsonCols))
 	for i, jsonCol := range jsonCols {
 		col, err := NewColumn(i, jsonCol.(map[string]interface{}))
@@ -56,7 +65,7 @@ func NewTable(jsonTable map[string]interface{}) (*Table, error) {
 			listValued[col.Name] = false
 		}
 	}
-	jsonFks, ok := jsonTable["tableSchema"].(map[string]interface{})["foreignKeys"]
+	jsonFks, ok := tableSchema["foreignKeys"]
 	var fks []*ForeignKey
 	if ok {
 		fks = make([]*ForeignKey, len(jsonFks.([]interface{})))
@@ -75,20 +84,10 @@ func NewTable(jsonTable map[string]interface{}) (*Table, error) {
 			fks[i] = &fk
 		}
 	}
-	var pk []string
-	jsonPk, ok := jsonTable["tableSchema"].(map[string]interface{})["primaryKey"]
-	if ok {
-		for _, col := range jsonPk.([]interface{}) {
-			val, ok := col.(string)
-			if ok {
-				pk = append(pk, val)
-			}
-		}
+	pk, err := jsonutil.GetStringArray(tableSchema, "primaryKey")
+	if err != nil {
+		return nil, err
 	}
-	var (
-		dialect *Dialect
-		err     error
-	)
 	_, ok = jsonTable["dialect"]
 	if ok {
 		dialect, err = NewDialect(jsonTable)
@@ -98,6 +97,15 @@ func NewTable(jsonTable map[string]interface{}) (*Table, error) {
 	} else {
 		dialect = nil
 	}
+	if dialect != nil {
+		if dialect.trim == "true" {
+			trimmer = strings.TrimSpace
+		} else if dialect.trim == "end" {
+			trimmer = func(s string) string {
+				return strings.TrimRightFunc(s, unicode.IsSpace)
+			}
+		}
+	}
 	res := &Table{
 		Url:         jsonTable["url"].(string),
 		Columns:     columns,
@@ -105,10 +113,11 @@ func NewTable(jsonTable map[string]interface{}) (*Table, error) {
 		ForeignKeys: fks,
 		PrimaryKey:  pk,
 		Dialect:     dialect,
+		trimmer:     trimmer,
 	}
-	val, ok := jsonTable["dc:conformsTo"]
-	if ok {
-		res.Comp = val.(string)
+	res.Comp, err = jsonutil.GetString(jsonTable, "dc:conformsTo", "")
+	if err != nil {
+		return nil, err
 	}
 	if res.Comp != "" {
 		parts := strings.Split(res.Comp, "#")
@@ -120,16 +129,10 @@ func NewTable(jsonTable map[string]interface{}) (*Table, error) {
 }
 
 // Read a row represented as slice of strings into Go objects.
-func (tbl *Table) readRow(fields []string, dialect *Dialect) (map[string]interface{}, error) {
+func (tbl *Table) readRow(fields []string, noChecks bool) (map[string]interface{}, error) {
 	row := make(map[string]interface{}, len(fields))
 	for i := 0; i < len(fields); i++ {
-		field := fields[i]
-		if dialect.trim == "true" {
-			field = strings.TrimSpace(field)
-		} else if dialect.trim == "end" {
-			field = strings.TrimRightFunc(field, unicode.IsSpace)
-		}
-		val, err := tbl.Columns[i].ToGo(field, true)
+		val, err := tbl.Columns[i].ToGo(tbl.trimmer(fields[i]), true, noChecks)
 		if err != nil {
 			return nil, err
 		}
@@ -171,7 +174,7 @@ func readZipped(fp string) (bytes []byte, err error) {
 	return contentBytes, nil
 }
 
-func (tbl *Table) Read(dir string, dialect *Dialect, ch chan<- TableRead) {
+func (tbl *Table) Read(dir string, dialect *Dialect, noChecks bool, ch chan<- TableRead) {
 	var reader *csv.Reader
 	fp := filepath.Join(dir, tbl.Url)
 	zipped := false
@@ -217,7 +220,7 @@ func (tbl *Table) Read(dir string, dialect *Dialect, ch chan<- TableRead) {
 
 	for rowIndex, row := range rows {
 		if !dialect.header || (rowIndex > 0) { // FIXME: take headerRowCount and skipRows into account!
-			val, err := tbl.readRow(row, dialect)
+			val, err := tbl.readRow(row, noChecks)
 			if err != nil {
 				ch <- TableRead{tbl.Url, err}
 				return
@@ -228,7 +231,7 @@ func (tbl *Table) Read(dir string, dialect *Dialect, ch chan<- TableRead) {
 	ch <- TableRead{tbl.Url, err}
 }
 
-func (tbl *Table) NameToCol() map[string]*Column {
+func (tbl *Table) nameToCol() map[string]*Column {
 	nameToCol := make(map[string]*Column, len(tbl.Columns))
 	for _, col := range tbl.Columns {
 		nameToCol[col.Name] = col
@@ -236,13 +239,13 @@ func (tbl *Table) NameToCol() map[string]*Column {
 	return nameToCol
 }
 
-func (tbl *Table) SqlCreateAssociationTable(fk ForeignKey, UrlToTable map[string]*Table) string {
+func (tbl *Table) sqlCreateAssociationTable(fk ForeignKey, UrlToTable map[string]*Table) string {
 	var res []string
 	stable := tbl.CanonicalName
-	spk := tbl.NameToCol()[tbl.PrimaryKey[0]].CanonicalName
+	spk := tbl.nameToCol()[tbl.PrimaryKey[0]].CanonicalName
 	ttable_ := UrlToTable[fk.Reference.Resource]
 	ttable := ttable_.CanonicalName
-	tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+	tpk := ttable_.nameToCol()[ttable_.PrimaryKey[0]].CanonicalName
 	res = append(res, fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS `%v_%v` (", stable, ttable))
 	res = append(res, fmt.Sprintf(
@@ -261,22 +264,22 @@ func (tbl *Table) SqlCreateAssociationTable(fk ForeignKey, UrlToTable map[string
 	return strings.Join(res, "\n")
 }
 
-func (tbl *Table) AssociationTableRowsToSql(
+func (tbl *Table) associationTableRowsToSql(
 	fk *ForeignKey,
 	UrlToTable map[string]*Table,
 ) (rows [][]any, tableName string, colNames []string, err error) {
 	stable := tbl.CanonicalName
-	spk := tbl.NameToCol()[tbl.PrimaryKey[0]].CanonicalName
+	spk := tbl.nameToCol()[tbl.PrimaryKey[0]].CanonicalName
 	ttable_ := UrlToTable[fk.Reference.Resource]
 	ttable := ttable_.CanonicalName
-	tpk := ttable_.NameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+	tpk := ttable_.nameToCol()[ttable_.PrimaryKey[0]].CanonicalName
 
 	colNames = []string{
 		fmt.Sprintf("%v_%v", stable, spk),
 		fmt.Sprintf("%v_%v", ttable, tpk),
 		"context"}
 
-	colName := tbl.NameToCol()[fk.ColumnReference[0]].CanonicalName
+	colName := tbl.nameToCol()[fk.ColumnReference[0]].CanonicalName
 	for _, row := range tbl.Data {
 		vals, ok := row[colName].([]string)
 		if ok {
@@ -301,7 +304,7 @@ func (tbl *Table) ManyToMany() []*ForeignKey {
 	return manyToMany
 }
 
-func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
+func (tbl *Table) sqlCreate(UrlToTable map[string]*Table, noChecks bool) (string, error) {
 	var (
 		res        []string
 		pk         []string
@@ -311,7 +314,7 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
 	for _, fk := range tbl.ManyToMany() {
 		manyToMany = append(manyToMany, fk.ColumnReference[0])
 	}
-	nameToCol := tbl.NameToCol()
+	nameToCol := tbl.nameToCol()
 	pk = append(pk, "PRIMARY KEY(")
 	for i, col := range tbl.PrimaryKey {
 		if i > 0 {
@@ -327,9 +330,7 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
 			if i == 0 {
 				clause += "\t"
 			}
-			// FIXME: add CHECK constraints!
-			clauses = append(clauses, clause+col.sqlCreate())
-			//clauses = append(clauses, clause+fmt.Sprintf("`%v`\t%v", col.CanonicalName, col.Datatype.SqlType()))
+			clauses = append(clauses, clause+col.sqlCreate(noChecks))
 		}
 	}
 	clauses = append(clauses, strings.Join(pk, ""))
@@ -350,7 +351,7 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
 				if i > 0 {
 					clause += ","
 				}
-				val, ok := ttable.NameToCol()[col]
+				val, ok := ttable.nameToCol()[col]
 				if ok {
 					clause += fmt.Sprintf("`%v`", val.CanonicalName)
 				} else {
@@ -368,11 +369,11 @@ func (tbl *Table) SqlCreate(UrlToTable map[string]*Table) (string, error) {
 	return strings.Join(res, "\n"), nil
 }
 
-// RowsToSql returns
+// rowsToSql returns
 //   - a slice of slices representing the rows in the table with values formatted
 //     for insertion into SQLite.
 //   - a slice of column names representing the column names (in order) for the rows.
-func (tbl *Table) RowsToSql() (rows [][]any, colNames []string, err error) {
+func (tbl *Table) rowsToSql() (rows [][]any, colNames []string, err error) {
 	var manyToMany []string
 	for _, fk := range tbl.ManyToMany() {
 		manyToMany = append(manyToMany, fk.ColumnReference[0])

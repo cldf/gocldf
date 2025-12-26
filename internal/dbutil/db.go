@@ -13,7 +13,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-func WithDatabase(dbPath string, fn func(*sql.DB) error, mustExist bool) error {
+func WithDatabase(dbPath string, fn func(*sql.DB) error, mustExist bool, foreignKeysOn bool) (err error) {
 	if dbPath != ":memory:" && !pathutil.PathExists(dbPath) && mustExist {
 		return errors.New("database does not exist")
 	}
@@ -22,42 +22,51 @@ func WithDatabase(dbPath string, fn func(*sql.DB) error, mustExist bool) error {
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec("PRAGMA journal_mode = WAL;")
+	defer func(db *sql.DB) {
+		err = db.Close()
+	}(db)
+	_, err = db.Exec("PRAGMA journal_mode = MEMORY;")
 	if err != nil {
 		return err
 	}
-	_, err = db.Exec("PRAGMA synchronous = NORMAL;")
+	_, err = db.Exec("PRAGMA synchronous = OFF;")
 	if err != nil {
 		return err
+	}
+	if foreignKeysOn {
+		_, err = db.Exec("PRAGMA foreign_keys = ON;")
+		if err != nil {
+			return err
+		}
 	}
 	err = fn(db)
 	if err != nil {
 		return err
 	}
-	return db.Close()
+	return err
 }
 
 func WithTransaction(db *sql.DB, fn func(tx *sql.Tx) error) (err error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return err
+		return
 	}
 	defer tx.Rollback() // Safely ignored if tx.Commit() is called first
 
 	err = fn(tx)
 	if err != nil {
-		return err
+		return
 	}
 	if err = tx.Commit(); err != nil {
-		return err
+		return
 	}
-	return err
+	return
 }
 
 func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) {
 	var (
 		version   string
-		maxParams int = 900
+		maxParams = 900
 	)
 	err := tx.QueryRow("SELECT sqlite_version()").Scan(&version)
 	if err == nil {
@@ -104,24 +113,27 @@ func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) 
 	}
 }
 
-func Query(db *sql.DB, query string, scanner func(*sql.Rows) error, args ...interface{}) error {
+func Query(db *sql.DB, query string, scanner func(*sql.Rows) error, args ...interface{}) (err error) {
 	rows, err := db.Query(query, args...)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
+	defer func(rows *sql.Rows) {
+		err = rows.Close()
+	}(rows)
 
 	for rows.Next() {
-		if err := scanner(rows); err != nil {
+		if err = scanner(rows); err != nil {
 			return err
 		}
 	}
 	return rows.Err()
 }
 
+// QueryDatabase is a convenient wrapper around WithDatabase and Query.
 func QueryDatabase(dbPath string, query string, scanner func(*sql.Rows) error, args ...interface{}) error {
 	err := WithDatabase(dbPath, func(database *sql.DB) error {
 		return Query(database, query, scanner, args...)
-	}, true)
+	}, true, true)
 	return err
 }

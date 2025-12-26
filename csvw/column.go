@@ -3,6 +3,7 @@ package csvw
 import (
 	"fmt"
 	"gocldf/csvw/datatype"
+	"gocldf/internal/jsonutil"
 	"slices"
 	"strconv"
 	"strings"
@@ -10,7 +11,7 @@ import (
 
 type Column struct {
 	Name          string
-	CanonicalName string
+	CanonicalName string // Either the CLDF property short name or the column name
 	PropertyUrl   string
 	Datatype      datatype.Datatype
 	Separator     string
@@ -19,34 +20,27 @@ type Column struct {
 
 func NewColumn(index int, jsonCol map[string]interface{}) (*Column, error) {
 	var (
-		name          string = ""
-		purl          string = ""
-		sep           string = ""
-		canonicalName string = ""
+		err           error
+		name          = ""
+		purl          = ""
+		sep           = ""
+		canonicalName = ""
 	)
-	null := make([]string, 0)
-	val, ok := jsonCol["name"]
-	if ok {
-		name = val.(string)
-	} else {
-		name = "Col_" + strconv.Itoa(index+1)
+	name, err = jsonutil.GetString(jsonCol, "name", "Col_"+strconv.Itoa(index+1))
+	if err != nil {
+		return nil, err
 	}
-	val, ok = jsonCol["separator"]
-	if ok {
-		sep = val.(string)
+	sep, err = jsonutil.GetString(jsonCol, "separator", "")
+	if err != nil {
+		return nil, err
 	}
-	val, ok = jsonCol["propertyUrl"]
-	if ok {
-		purl = val.(string)
+	purl, err = jsonutil.GetString(jsonCol, "propertyUrl", "")
+	if err != nil {
+		return nil, err
 	}
-	val, ok = jsonCol["null"]
-	if ok {
-		for _, n := range val.([]interface{}) {
-			s, ok := n.(string)
-			if ok {
-				null = append(null, s)
-			}
-		}
+	null, err := jsonutil.GetStringArray(jsonCol, "null")
+	if err != nil {
+		return nil, err
 	}
 	if len(null) == 0 {
 		null = append(null, "")
@@ -71,8 +65,9 @@ func NewColumn(index int, jsonCol map[string]interface{}) (*Column, error) {
 	return col, nil
 }
 
-func (column *Column) ToGo(s string, split bool) (any, error) {
+func (column *Column) ToGo(s string, split bool, noChecks bool) (any, error) {
 	if slices.Contains(column.Null, s) {
+		// Return an empty list for list-valued fields, nil otherwise.
 		if split && column.Separator != "" {
 			return make([]string, 0), nil
 		}
@@ -82,7 +77,7 @@ func (column *Column) ToGo(s string, split bool) (any, error) {
 		fields := strings.Split(s, column.Separator)
 		res := make([]string, len(fields))
 		for i, field := range fields {
-			val, err := column.ToGo(field, false)
+			val, err := column.ToGo(field, false, noChecks)
 			if err != nil {
 				return nil, err
 			}
@@ -90,7 +85,7 @@ func (column *Column) ToGo(s string, split bool) (any, error) {
 		}
 		return res, nil
 	}
-	return column.Datatype.ToGo(s)
+	return column.Datatype.ToGo(s, noChecks)
 }
 
 func (column *Column) ToSql(x any) (any, error) {
@@ -104,10 +99,34 @@ func (column *Column) ToString(x any) (string, error) {
 	return column.Datatype.ToString(x)
 }
 
-func (column *Column) sqlCreate() string {
+func (column *Column) sqlCreate(noChecks bool) string {
 	res := fmt.Sprintf("`%v`\t%v", column.CanonicalName, column.Datatype.SqlType())
-	if column.Datatype.Minimum != nil {
-		res += fmt.Sprintf(" CHECK(`%v` >= %v)", column.CanonicalName, column.Datatype.Minimum)
+	if !noChecks {
+		var checks []string
+		if column.Datatype.MinInclusive != nil {
+			checks = append(checks, fmt.Sprintf("`%v` >= %v", column.CanonicalName, column.Datatype.MinInclusive))
+		}
+		if column.Datatype.MinExclusive != nil {
+			checks = append(checks, fmt.Sprintf("`%v` > %v", column.CanonicalName, column.Datatype.MinExclusive))
+		}
+		if column.Datatype.MaxInclusive != nil {
+			checks = append(checks, fmt.Sprintf("`%v` <= %v", column.CanonicalName, column.Datatype.MaxInclusive))
+		}
+		if column.Datatype.MaxExclusive != nil {
+			checks = append(checks, fmt.Sprintf("`%v` < %v", column.CanonicalName, column.Datatype.MaxExclusive))
+		}
+		if column.Datatype.Length >= 0 {
+			checks = append(checks, fmt.Sprintf("length(`%v`) = %v", column.CanonicalName, column.Datatype.Length))
+		}
+		if column.Datatype.MinLength >= 0 {
+			checks = append(checks, fmt.Sprintf("length(`%v`) >= %v", column.CanonicalName, column.Datatype.MinLength))
+		}
+		if column.Datatype.MaxLength >= 0 {
+			checks = append(checks, fmt.Sprintf("length(`%v`) <= %v", column.CanonicalName, column.Datatype.MaxLength))
+		}
+		if len(checks) > 0 {
+			res += fmt.Sprintf(" CHECK(%v)", strings.Join(checks, " AND "))
+		}
 	}
 	return res
 }

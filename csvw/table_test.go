@@ -31,7 +31,7 @@ func makeTable(fname string, load bool) Table {
 	}
 	if load {
 		result := make(chan TableRead, 1)
-		go tbl.Read("testdata/", makeDialect(), result)
+		go tbl.Read("testdata/", makeDialect(), false, result)
 		_ = <-result
 	}
 	return *tbl
@@ -49,7 +49,7 @@ func TestTable_simple(t *testing.T) {
 		t.Errorf(`problem: %q vs %q`, len(tbl.CanonicalName), "table_simple.csv")
 	}
 	result := make(chan TableRead, 1)
-	go tbl.Read("testdata/", makeDialect(), result)
+	go tbl.Read("testdata/", makeDialect(), false, result)
 	tableRead := <-result
 	if tableRead.Err != nil || tableRead.Url != "table_simple.csv" {
 		t.Errorf(`problem`)
@@ -89,8 +89,8 @@ func TestTable_with_dialect(t *testing.T) {
 
 func TestTable_with_dialect2(t *testing.T) {
 	tbl := makeTable("table_with_dialect2.json", true)
-	if tbl.Data[1]["Col"].(string) != "y" {
-		t.Errorf(`problem: expected "y " columns got %q`, tbl.Data[1]["Col"].(string))
+	if tbl.Data[1]["Col"].(string) != "  y" {
+		t.Errorf(`problem: expected "  y" columns got %q`, tbl.Data[1]["Col"].(string))
 	}
 }
 
@@ -114,19 +114,19 @@ func TestTable_fk(t *testing.T) {
 	}
 	tbl2 := makeTable("table_simple.json", true)
 	urlToTable := map[string]*Table{"table_simple.csv": &tbl2}
-	sql, _ := tbl.SqlCreate(urlToTable)
+	sql, _ := tbl.sqlCreate(urlToTable, false)
 	if !strings.Contains(sql, "PRIMARY KEY") {
 		t.Errorf(`problem`)
 	}
-	data, colNames, _ := tbl.RowsToSql()
+	data, colNames, _ := tbl.rowsToSql()
 	if len(data) != 3 {
 		t.Errorf(`problem: %v vs %v`, len(data), 3)
 	}
-	sql = tbl.SqlCreateAssociationTable(*tbl.ManyToMany()[0], urlToTable)
+	sql = tbl.sqlCreateAssociationTable(*tbl.ManyToMany()[0], urlToTable)
 	if !strings.Contains(sql, "context") {
 		t.Errorf(`problem`)
 	}
-	data, tName, colNames, _ := tbl.AssociationTableRowsToSql(tbl.ManyToMany()[0], urlToTable)
+	data, tName, colNames, _ := tbl.associationTableRowsToSql(tbl.ManyToMany()[0], urlToTable)
 	if len(data) != 3 {
 		t.Errorf(`problem: %v vs %v`, len(data), 3)
 	}
