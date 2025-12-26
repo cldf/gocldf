@@ -5,7 +5,7 @@ import (
 	"regexp"
 )
 
-var String = BaseType{
+var String = baseType{
 	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		val, ok := dtProps["format"]
 		if ok {
@@ -14,6 +14,7 @@ var String = BaseType{
 		}
 		return map[string]any{"regex": nil}, nil
 	},
+	SetValueConstraints: zeroSetValueConstraints,
 	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		if !noChecks {
 			if dt.Length != -1 && len(s) != dt.Length {

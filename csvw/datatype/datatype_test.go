@@ -107,6 +107,7 @@ func TestDatatype_ToGoError(t *testing.T) {
 		{`{"base":"decimal","minimum":-2.2}`, "-2.3"},
 		{`{"base":"decimal","minInclusive":-2.2}`, "-2.3"},
 		{`{"base":"decimal","minExclusive":"0"}`, "0"},
+		{`{"base":"datetime","maximum":"2018-12-10T20:20:20"}`, "2019-12-10T20:20:20"},
 		{`{"base":"integer","maxExclusive":"5"}`, "5"},
 		{`{"base":"string","length":3}`, "ab"},
 		{`{"base":"string","minLength":3}`, "ab"},
@@ -136,6 +137,8 @@ func TestDatatype_RoundtripValue(t *testing.T) {
 		{`{"base":"json"}`, `{"k":5}`},
 		{`{"base":"string"}`, "äöü"},
 		{`{"base":"anyURI"}`, "http://example.org"},
+		{`{"base":"datetime"}`, "2018-12-10T20:20:20"},
+		{`{"base":"datetime","format":"yyyy-MM-ddTHH:mm"}`, "2018-12-10T20:20"},
 	}
 	for _, tt := range tests {
 		t.Run("Roundtrip", func(t *testing.T) {

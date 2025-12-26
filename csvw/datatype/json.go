@@ -2,10 +2,11 @@ package datatype
 
 import "encoding/json"
 
-var Json = BaseType{
+var Json = baseType{
 	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		return map[string]any{}, nil
 	},
+	SetValueConstraints: zeroSetValueConstraints,
 	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		var result any
 		err := json.Unmarshal([]byte(s), &result)

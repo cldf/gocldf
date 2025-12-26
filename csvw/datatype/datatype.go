@@ -28,12 +28,12 @@ The CSVW spec defines the following steps to parse a string value in a csv cell:
 package datatype
 
 import (
+	"fmt"
 	"gocldf/internal/jsonutil"
-	"strconv"
 )
 
 /*
-BaseType ties together functions related to converting between string and Go representations of CSVW datatypes.
+baseType ties together functions related to converting between string and Go representations of CSVW datatypes.
 
 GetDerivedDescription is called when instantiating a Datatype object.
 The result is stored as DerivedDescription member of the Datatype and can be
@@ -49,25 +49,41 @@ SqlType specifies the best matching SQLite data type.
 ToSql implements the conversion of the Go object to a suitable object for insertion
 into a SQLite database.
 */
-type BaseType struct {
+type baseType struct {
 	GetDerivedDescription func(map[string]any) (map[string]any, error)
+	SetValueConstraints   func(map[string]stringAndAny) error
 	ToGo                  func(*Datatype, string, bool) (any, error)
 	ToString              func(*Datatype, any) (string, error)
 	SqlType               string
 	ToSql                 func(*Datatype, any) (any, error)
 }
 
-// BaseTypes provides a mapping of CSVW data type base names to BaseType instances.
-var BaseTypes = map[string]BaseType{
-	"boolean": Boolean,
-	"string":  String,
-	"anyURI":  AnyURI,
-	"integer": Integer,
-	"decimal": Decimal,
-	"float":   Decimal,
-	"number":  Decimal,
-	"double":  Decimal,
-	"json":    Json,
+func zeroGetDerivedDescription(m map[string]any) (map[string]any, error) {
+	if len(m) < 0 {
+		return nil, fmt.Errorf("zeroGetDerivedDescription called with %d values", len(m))
+	}
+	return map[string]any{}, nil
+}
+
+func zeroSetValueConstraints(m map[string]stringAndAny) error {
+	if len(m) != 4 {
+		return fmt.Errorf("zeroGetDerivedDescription called with %d values", len(m))
+	}
+	return nil
+}
+
+// BaseTypes provides a mapping of CSVW data type base names to baseType instances.
+var BaseTypes = map[string]baseType{
+	"boolean":  Boolean,
+	"string":   String,
+	"anyURI":   AnyURI,
+	"integer":  Integer,
+	"decimal":  Decimal,
+	"float":    Decimal,
+	"number":   Decimal,
+	"double":   Decimal,
+	"json":     Json,
+	"datetime": Datetime,
 }
 
 // Datatype holds the data related to a CSVW datatype description.
@@ -86,20 +102,17 @@ type Datatype struct {
 	DerivedDescription map[string]any
 }
 
+type stringAndAny struct {
+	str string
+	val any
+}
+
 // New is a factory function to create a Datatype as specified in a JSON description.
 func New(jsonCol map[string]interface{}) (*Datatype, error) {
 	var (
+		s2a stringAndAny
 		s   string
 		err error
-		//
-		minInclusiveS string
-		maxInclusiveS string
-		minExclusiveS string
-		maxExclusiveS string
-		minInclusive  any = nil
-		maxInclusive  any = nil
-		minExclusive  any = nil
-		maxExclusive  any = nil
 		// We seed the three length constraints with a sentinel value.
 		length    = -1
 		minLength = -1
@@ -107,6 +120,12 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 		base      = "string"
 	)
 	dtProps := map[string]any{}
+
+	valueConstraintNames := []string{"minInclusive", "maxInclusive", "minExclusive", "maxExclusive"}
+	valueConstraints := make(map[string]stringAndAny, 4)
+	for _, v := range valueConstraintNames {
+		valueConstraints[v] = stringAndAny{"", nil}
+	}
 
 	val, ok := jsonCol["datatype"]
 	if ok {
@@ -129,64 +148,40 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 				return nil, err
 			}
 			// For constraints which must match the base type we first get the string representation.
-			minInclusiveS, err = jsonutil.GetString(dtProps, "minimum", "")
-			if err != nil {
-				return nil, err
+			for _, v := range valueConstraintNames {
+				s2a = valueConstraints[v]
+				if s2a.str == "" {
+					s2a.str, err = jsonutil.GetString(dtProps, v, "")
+					if err != nil {
+						return nil, err
+					}
+				}
+				valueConstraints[v] = s2a
 			}
-			maxInclusiveS, err = jsonutil.GetString(dtProps, "maximum", "")
-			if err != nil {
-				return nil, err
-			}
-			if minInclusiveS == "" {
-				minInclusiveS, err = jsonutil.GetString(dtProps, "minInclusive", "")
+			// minimum is just an alias for minInclusive.
+			if valueConstraints["minInclusive"].str == "" {
+				s2a = valueConstraints["minInclusive"]
+				s2a.str, err = jsonutil.GetString(dtProps, "minimum", "")
 				if err != nil {
 					return nil, err
 				}
+				valueConstraints["minInclusive"] = s2a
 			}
-			minExclusiveS, err = jsonutil.GetString(dtProps, "minExclusive", "")
-			if err != nil {
-				return nil, err
-			}
-			if maxInclusiveS == "" {
-				maxInclusiveS, err = jsonutil.GetString(dtProps, "maxInclusive", "")
+			// and so is maximum
+			if valueConstraints["maxInclusive"].str == "" {
+				s2a = valueConstraints["maxInclusive"]
+				s2a.str, err = jsonutil.GetString(dtProps, "maximum", "")
 				if err != nil {
 					return nil, err
 				}
-			}
-			maxExclusiveS, err = jsonutil.GetString(dtProps, "maxExclusive", "")
-			if err != nil {
-				return nil, err
+				valueConstraints["maxInclusive"] = s2a
 			}
 		}
 	}
 	// Now convert the constraints appropriately:
-	switch base {
-	case "integer":
-		if minInclusiveS != "" {
-			minInclusive, err = strconv.Atoi(minInclusiveS)
-		}
-		if minExclusiveS != "" {
-			minExclusive, err = strconv.Atoi(minExclusiveS)
-		}
-		if maxInclusiveS != "" {
-			maxInclusive, err = strconv.Atoi(maxInclusiveS)
-		}
-		if maxExclusiveS != "" {
-			maxExclusive, err = strconv.Atoi(maxExclusiveS)
-		}
-	case "decimal", "float", "number", "double":
-		if minInclusiveS != "" {
-			minInclusive, err = strconv.ParseFloat(minInclusiveS, 64)
-		}
-		if minExclusiveS != "" {
-			minExclusive, err = strconv.ParseFloat(minExclusiveS, 64)
-		}
-		if maxInclusiveS != "" {
-			maxInclusive, err = strconv.ParseFloat(maxInclusiveS, 64)
-		}
-		if maxExclusiveS != "" {
-			maxExclusive, err = strconv.ParseFloat(maxExclusiveS, 64)
-		}
+	err = BaseTypes[base].SetValueConstraints(valueConstraints)
+	if err != nil {
+		return nil, err
 	}
 	// We compute the derived description map once at instantiation.
 	dd, err := BaseTypes[base].GetDerivedDescription(dtProps)
@@ -200,10 +195,10 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 		Length:             length,
 		MinLength:          minLength,
 		MaxLength:          maxLength,
-		MinInclusive:       minInclusive,
-		MinExclusive:       minExclusive,
-		MaxInclusive:       maxInclusive,
-		MaxExclusive:       maxExclusive,
+		MinInclusive:       valueConstraints["minInclusive"].val,
+		MinExclusive:       valueConstraints["minExclusive"].val,
+		MaxInclusive:       valueConstraints["maxInclusive"].val,
+		MaxExclusive:       valueConstraints["maxExclusive"].val,
 	}
 	return res, nil
 }

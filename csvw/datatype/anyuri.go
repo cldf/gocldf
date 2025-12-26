@@ -2,10 +2,9 @@ package datatype
 
 import "net/url"
 
-var AnyURI = BaseType{
-	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
-		return map[string]any{}, nil
-	},
+var AnyURI = baseType{
+	GetDerivedDescription: zeroGetDerivedDescription,
+	SetValueConstraints:   zeroSetValueConstraints,
 	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		u, err := url.Parse(s)
 		if err != nil {

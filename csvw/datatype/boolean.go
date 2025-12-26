@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-var Boolean = BaseType{
+var Boolean = baseType{
 	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		val, ok := dtProps["format"]
 		if ok {
@@ -15,6 +15,7 @@ var Boolean = BaseType{
 		}
 		return map[string]any{"true": []string{"true", "1"}, "false": []string{"false", "0"}}, nil
 	},
+	SetValueConstraints: zeroSetValueConstraints,
 	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		if slices.Contains(dt.DerivedDescription["true"].([]string), s) {
 			return true, nil
