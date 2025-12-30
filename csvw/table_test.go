@@ -37,6 +37,10 @@ func makeTable(fname string, load bool) Table {
 	return *tbl
 }
 
+func TestTable_NewError(t *testing.T) {
+
+}
+
 func TestTable_simple(t *testing.T) {
 	tbl := makeTable("table_simple.json", false)
 	if len(tbl.PrimaryKey) != 1 {

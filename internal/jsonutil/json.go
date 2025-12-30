@@ -7,12 +7,17 @@ import (
 )
 
 func GetString(jsonObject map[string]any, attr string, defaultValue string) (string, error) {
+	var res string
 	val, ok := jsonObject[attr]
 	if ok {
 		if valN, ok := val.(float64); ok {
 			return strconv.FormatFloat(valN, 'g', -1, 64), nil
 		}
-		return val.(string), nil
+		res, ok = val.(string)
+		if ok {
+			return res, nil
+		}
+		return res, errors.New(attr + " is not a string")
 	}
 	return defaultValue, nil
 }

@@ -39,9 +39,6 @@ getDerivedDescription is called when instantiating a Datatype object.
 The result is stored as DerivedDescription member of the Datatype and can be
 accessed from toGo and toString via the Datatype passed as first argument.
 
-setValueConstraints is called when instantiating a Datatype to set the value
-constraints that have values which must match the base type.
-
 toGo implements parsing of a string into an appropriately typed Go object.
 
 toString implements the serialization of the Go object to a string - ideally in a
@@ -53,41 +50,42 @@ toSql implements the conversion of the Go object to a suitable object for insert
 into a SQLite database.
 */
 type baseType struct {
-	getDerivedDescription func(map[string]any) (map[string]any, error)
-	setValueConstraints   func(map[string]stringAndAny) error
+	getDerivedDescription func(map[string]any, map[string]stringAndAny) (map[string]any, error)
 	toGo                  func(*Datatype, string, bool) (any, error)
 	toString              func(*Datatype, any) (string, error)
 	sqlType               string
 	toSql                 func(*Datatype, any) (any, error)
 }
 
-func zeroGetDerivedDescription(m map[string]any) (map[string]any, error) {
+func zeroGetDerivedDescription(m map[string]any, _ map[string]stringAndAny) (map[string]any, error) {
 	if len(m) < 0 {
 		return nil, fmt.Errorf("zeroGetDerivedDescription called with %d values", len(m))
 	}
 	return map[string]any{}, nil
 }
 
-func zeroSetValueConstraints(m map[string]stringAndAny) error {
-	if len(m) != 4 {
-		return fmt.Errorf("zeroGetDerivedDescription called with %d values", len(m))
-	}
-	return nil
-}
-
 // baseTypes provides a mapping of CSVW data type base names to baseType instances.
 var baseTypes = map[string]baseType{
-	"boolean":  Boolean,
-	"string":   String,
-	"anyURI":   AnyURI,
-	"integer":  Integer,
-	"decimal":  Decimal,
-	"float":    Decimal,
-	"number":   Decimal,
-	"double":   Decimal,
-	"json":     Json,
-	"datetime": Datetime,
-	"dateTime": Datetime,
+	"boolean":       boolean,
+	"string":        String,
+	"html":          String,
+	"xml":           String,
+	"anyURI":        anyURI,
+	"base64Binary":  base64binary,
+	"binary":        base64binary,
+	"integer":       integer, // FIXME: add long, short, byte as aliases
+	"int":           integer,
+	"decimal":       decimal,
+	"float":         decimal,
+	"number":        decimal,
+	"double":        decimal,
+	"json":          Json,
+	"time":          Time,
+	"date":          date,
+	"datetime":      dateTime,
+	"dateTime":      dateTime,
+	"dateTimeStamp": dateTimeStamp,
+	// FIXME: missing: gDay etc, duration, hexBinary, QName
 }
 
 // Datatype holds the data related to a CSVW datatype description.
@@ -138,7 +136,10 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 			base = s
 		} else { // Spec is a JSON object "datatype": {...}
 			dtProps = val.(map[string]any)
-			base = dtProps["base"].(string)
+			val, ok = dtProps["base"]
+			if ok {
+				base = val.(string)
+			}
 			length, err = jsonutil.GetInt(dtProps, "length", -1)
 			if err != nil {
 				return nil, err
@@ -182,13 +183,8 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 			}
 		}
 	}
-	// Now convert the constraints appropriately:
-	err = baseTypes[base].setValueConstraints(valueConstraints)
-	if err != nil {
-		return nil, err
-	}
 	// We compute the derived description map once at instantiation.
-	dd, err := baseTypes[base].getDerivedDescription(dtProps)
+	dd, err := baseTypes[base].getDerivedDescription(dtProps, valueConstraints)
 	if err != nil {
 		return nil, err
 	}

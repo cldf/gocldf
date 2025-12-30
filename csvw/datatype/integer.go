@@ -5,18 +5,15 @@ import (
 	"strconv"
 )
 
-var Integer = baseType{
-	getDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
-		return map[string]any{}, nil
-	},
-	setValueConstraints: func(m map[string]stringAndAny) (err error) {
+var integer = baseType{
+	getDerivedDescription: func(dtProps map[string]any, m map[string]stringAndAny) (_ map[string]any, err error) {
 		for k, v := range m {
 			if v.str != "" {
 				v.val, err = strconv.Atoi(v.str)
 			}
 			m[k] = v
 		}
-		return
+		return map[string]any{}, nil
 	},
 	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		val, err := strconv.Atoi(s)

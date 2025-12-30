@@ -40,10 +40,9 @@ type Table struct {
 	trimmer       func(string) string
 }
 
-func NewTable(jsonTable map[string]interface{}) (*Table, error) {
+func NewTable(jsonTable map[string]interface{}) (tbl *Table, err error) {
 	var (
 		dialect *Dialect
-		err     error
 		trimmer = func(s string) string { return s }
 	)
 	tableSchema := jsonTable["tableSchema"].(map[string]interface{})

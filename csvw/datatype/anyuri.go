@@ -2,9 +2,8 @@ package datatype
 
 import "net/url"
 
-var AnyURI = baseType{
+var anyURI = baseType{
 	getDerivedDescription: zeroGetDerivedDescription,
-	setValueConstraints:   zeroSetValueConstraints,
 	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		u, err := url.Parse(s)
 		if err != nil {

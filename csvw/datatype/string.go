@@ -3,18 +3,31 @@ package datatype
 import (
 	"errors"
 	"regexp"
+	"strings"
 )
 
 var String = baseType{
-	getDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+	getDerivedDescription: func(dtProps map[string]any, m map[string]stringAndAny) (map[string]any, error) {
 		val, ok := dtProps["format"]
 		if ok {
-			// FIXME: must make sure regex is anchored on both sides! I.e. wrap in "^$" if necessary.
-			return map[string]any{"regex": regexp.MustCompile(val.(string))}, nil
+			fmt, ok := val.(string)
+			if !ok {
+				return nil, errors.New("format property must be a string")
+			}
+			if !strings.HasPrefix(fmt, "^") {
+				fmt = "^" + fmt
+			}
+			if !strings.HasSuffix(fmt, "$") {
+				fmt += "$"
+			}
+			regex, err := regexp.Compile(fmt)
+			if err != nil {
+				return nil, err
+			}
+			return map[string]any{"regex": regex}, nil
 		}
 		return map[string]any{"regex": nil}, nil
 	},
-	setValueConstraints: zeroSetValueConstraints,
 	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		if !noChecks {
 			if dt.Length != -1 && len(s) != dt.Length {

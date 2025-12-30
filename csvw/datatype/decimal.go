@@ -6,18 +6,15 @@ import (
 	"strconv"
 )
 
-var Decimal = baseType{
-	getDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
-		return map[string]any{}, nil
-	},
-	setValueConstraints: func(m map[string]stringAndAny) (err error) {
+var decimal = baseType{
+	getDerivedDescription: func(dtProps map[string]any, m map[string]stringAndAny) (_ map[string]any, err error) {
 		for k, v := range m {
 			if v.str != "" {
 				v.val, err = strconv.ParseFloat(v.str, 64)
 			}
 			m[k] = v
 		}
-		return
+		return map[string]any{}, nil
 	},
 	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		val, err := strconv.ParseFloat(s, 64)
