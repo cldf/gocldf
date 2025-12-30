@@ -84,7 +84,7 @@ func TestDatatype_ToGo(t *testing.T) {
 			func(x any) bool { return x.(*url.URL).Host == "example.org" }},
 	}
 	for _, tt := range tests {
-		t.Run("ToGo", func(t *testing.T) {
+		t.Run("toGo", func(t *testing.T) {
 			dt := makeDatatype(tt.datatype)
 			val, err := dt.ToGo(tt.input, true)
 			if err == nil {
@@ -115,7 +115,7 @@ func TestDatatype_ToGoError(t *testing.T) {
 		{`"anyURI"`, "12:/example.org"},
 	}
 	for _, tt := range tests {
-		t.Run("ToGo", func(t *testing.T) {
+		t.Run("toGo", func(t *testing.T) {
 			dt := makeDatatype(tt.datatype)
 			val, err := dt.ToGo(tt.input, false)
 			if err == nil {
@@ -138,6 +138,7 @@ func TestDatatype_RoundtripValue(t *testing.T) {
 		{`{"base":"string"}`, "äöü"},
 		{`{"base":"anyURI"}`, "http://example.org"},
 		{`{"base":"datetime"}`, "2018-12-10T20:20:20"},
+		{`{"base":"datetime","format":"yyyy-MM-dd HH:mm X"}`, "2018-12-10 20:20 +0530"},
 		{`{"base":"datetime","format":"yyyy-MM-ddTHH:mm"}`, "2018-12-10T20:20"},
 	}
 	for _, tt := range tests {
@@ -150,6 +151,8 @@ func TestDatatype_RoundtripValue(t *testing.T) {
 						t.Errorf(`problem: %v vs %v`, tt.input, val)
 					}
 				}
+			} else {
+				t.Error(err)
 			}
 		})
 	}

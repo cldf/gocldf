@@ -35,27 +35,30 @@ import (
 /*
 baseType ties together functions related to converting between string and Go representations of CSVW datatypes.
 
-GetDerivedDescription is called when instantiating a Datatype object.
+getDerivedDescription is called when instantiating a Datatype object.
 The result is stored as DerivedDescription member of the Datatype and can be
-accessed from ToGo and ToString via the Datatype passed as first argument.
+accessed from toGo and toString via the Datatype passed as first argument.
 
-ToGo implements parsing of a string into an appropriately typed Go object.
+setValueConstraints is called when instantiating a Datatype to set the value
+constraints that have values which must match the base type.
 
-ToString implements the serialization of the Go object to a string - ideally in
+toGo implements parsing of a string into an appropriately typed Go object.
+
+toString implements the serialization of the Go object to a string - ideally in a
 roundtrip-safe way.
 
-SqlType specifies the best matching SQLite data type.
+sqlType specifies the best matching SQLite data type.
 
-ToSql implements the conversion of the Go object to a suitable object for insertion
+toSql implements the conversion of the Go object to a suitable object for insertion
 into a SQLite database.
 */
 type baseType struct {
-	GetDerivedDescription func(map[string]any) (map[string]any, error)
-	SetValueConstraints   func(map[string]stringAndAny) error
-	ToGo                  func(*Datatype, string, bool) (any, error)
-	ToString              func(*Datatype, any) (string, error)
-	SqlType               string
-	ToSql                 func(*Datatype, any) (any, error)
+	getDerivedDescription func(map[string]any) (map[string]any, error)
+	setValueConstraints   func(map[string]stringAndAny) error
+	toGo                  func(*Datatype, string, bool) (any, error)
+	toString              func(*Datatype, any) (string, error)
+	sqlType               string
+	toSql                 func(*Datatype, any) (any, error)
 }
 
 func zeroGetDerivedDescription(m map[string]any) (map[string]any, error) {
@@ -72,8 +75,8 @@ func zeroSetValueConstraints(m map[string]stringAndAny) error {
 	return nil
 }
 
-// BaseTypes provides a mapping of CSVW data type base names to baseType instances.
-var BaseTypes = map[string]baseType{
+// baseTypes provides a mapping of CSVW data type base names to baseType instances.
+var baseTypes = map[string]baseType{
 	"boolean":  Boolean,
 	"string":   String,
 	"anyURI":   AnyURI,
@@ -84,6 +87,7 @@ var BaseTypes = map[string]baseType{
 	"double":   Decimal,
 	"json":     Json,
 	"datetime": Datetime,
+	"dateTime": Datetime,
 }
 
 // Datatype holds the data related to a CSVW datatype description.
@@ -179,12 +183,12 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 		}
 	}
 	// Now convert the constraints appropriately:
-	err = BaseTypes[base].SetValueConstraints(valueConstraints)
+	err = baseTypes[base].setValueConstraints(valueConstraints)
 	if err != nil {
 		return nil, err
 	}
 	// We compute the derived description map once at instantiation.
-	dd, err := BaseTypes[base].GetDerivedDescription(dtProps)
+	dd, err := baseTypes[base].getDerivedDescription(dtProps)
 	if err != nil {
 		return nil, err
 	}
@@ -204,20 +208,20 @@ func New(jsonCol map[string]interface{}) (*Datatype, error) {
 }
 
 func (dt *Datatype) ToString(val any) (string, error) {
-	return BaseTypes[dt.Base].ToString(dt, val)
+	return baseTypes[dt.Base].toString(dt, val)
 }
 
 func (dt *Datatype) ToGo(s string, noChecks bool) (any, error) {
-	return BaseTypes[dt.Base].ToGo(dt, s, noChecks)
+	return baseTypes[dt.Base].toGo(dt, s, noChecks)
 }
 
 func (dt *Datatype) SqlType() string {
-	return BaseTypes[dt.Base].SqlType
+	return baseTypes[dt.Base].sqlType
 }
 
 func (dt *Datatype) ToSql(val any) (any, error) {
 	if val == nil {
 		return nil, nil
 	}
-	return BaseTypes[dt.Base].ToSql(dt, val)
+	return baseTypes[dt.Base].toSql(dt, val)
 }

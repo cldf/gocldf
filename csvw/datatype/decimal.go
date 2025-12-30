@@ -7,10 +7,10 @@ import (
 )
 
 var Decimal = baseType{
-	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+	getDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		return map[string]any{}, nil
 	},
-	SetValueConstraints: func(m map[string]stringAndAny) (err error) {
+	setValueConstraints: func(m map[string]stringAndAny) (err error) {
 		for k, v := range m {
 			if v.str != "" {
 				v.val, err = strconv.ParseFloat(v.str, 64)
@@ -19,7 +19,7 @@ var Decimal = baseType{
 		}
 		return
 	},
-	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
+	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		val, err := strconv.ParseFloat(s, 64)
 		if err != nil {
 			return nil, err
@@ -40,11 +40,11 @@ var Decimal = baseType{
 		}
 		return val, nil
 	},
-	ToString: func(dt *Datatype, x any) (string, error) {
+	toString: func(dt *Datatype, x any) (string, error) {
 		return fmt.Sprintf("%g", x.(float64)), nil
 	},
-	SqlType: "REAL",
-	ToSql: func(dt *Datatype, x any) (any, error) {
+	sqlType: "REAL",
+	toSql: func(dt *Datatype, x any) (any, error) {
 		return x.(float64), nil
 	},
 }

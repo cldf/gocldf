@@ -6,10 +6,10 @@ import (
 )
 
 var Integer = baseType{
-	GetDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
+	getDerivedDescription: func(dtProps map[string]any) (map[string]any, error) {
 		return map[string]any{}, nil
 	},
-	SetValueConstraints: func(m map[string]stringAndAny) (err error) {
+	setValueConstraints: func(m map[string]stringAndAny) (err error) {
 		for k, v := range m {
 			if v.str != "" {
 				v.val, err = strconv.Atoi(v.str)
@@ -18,7 +18,7 @@ var Integer = baseType{
 		}
 		return
 	},
-	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
+	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		val, err := strconv.Atoi(s)
 		if err != nil {
 			return nil, err
@@ -39,11 +39,11 @@ var Integer = baseType{
 		}
 		return val, nil
 	},
-	ToString: func(dt *Datatype, x any) (string, error) {
+	toString: func(dt *Datatype, x any) (string, error) {
 		return strconv.Itoa(x.(int)), nil
 	},
-	SqlType: "INTEGER",
-	ToSql: func(dt *Datatype, x any) (any, error) {
+	sqlType: "INTEGER",
+	toSql: func(dt *Datatype, x any) (any, error) {
 		return x.(int), nil
 	},
 }

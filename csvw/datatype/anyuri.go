@@ -3,9 +3,9 @@ package datatype
 import "net/url"
 
 var AnyURI = baseType{
-	GetDerivedDescription: zeroGetDerivedDescription,
-	SetValueConstraints:   zeroSetValueConstraints,
-	ToGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
+	getDerivedDescription: zeroGetDerivedDescription,
+	setValueConstraints:   zeroSetValueConstraints,
+	toGo: func(dt *Datatype, s string, noChecks bool) (any, error) {
 		u, err := url.Parse(s)
 		if err != nil {
 			return nil, err
@@ -19,12 +19,12 @@ var AnyURI = baseType{
 		*/
 		return u, nil
 	},
-	ToString: func(dt *Datatype, x any) (string, error) {
+	toString: func(dt *Datatype, x any) (string, error) {
 		u := x.(*url.URL)
 		return u.String(), nil
 	},
-	SqlType: "TEXT",
-	ToSql: func(dt *Datatype, x any) (any, error) {
+	sqlType: "TEXT",
+	toSql: func(dt *Datatype, x any) (any, error) {
 		u := x.(*url.URL)
 		return u.String(), nil
 	},
