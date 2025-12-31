@@ -1,4 +1,4 @@
-package csvw
+package cldf
 
 import (
 	"encoding/json"
@@ -25,7 +25,7 @@ func makeTable(fname string, load bool) Table {
 	if err != nil {
 		panic(err)
 	}
-	tbl, err := NewTable(result)
+	tbl, err := NewTable(result, false)
 	if err != nil {
 		panic(err)
 	}

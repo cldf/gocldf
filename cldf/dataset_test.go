@@ -1,4 +1,4 @@
-package csvw
+package cldf
 
 import (
 	"database/sql"

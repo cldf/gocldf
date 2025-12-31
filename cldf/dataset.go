@@ -1,4 +1,4 @@
-package csvw
+package cldf
 
 import (
 	"encoding/json"
@@ -15,6 +15,7 @@ type Dataset struct {
 	Metadata     map[string]interface{}
 	Dialect      *Dialect
 	Tables       map[string]*Table
+	Sources      *Sources
 }
 
 func NewDataset(mdPath string) (*Dataset, error) {
@@ -36,6 +37,21 @@ func NewDataset(mdPath string) (*Dataset, error) {
 		}
 		metadata[k] = v
 	}
+	var (
+		sourcesBibtex string
+		sources       *Sources
+	)
+	val, ok := result["dc:source"]
+	if ok {
+		sourcesBibtex, ok = val.(string)
+		if !ok {
+			return nil, errors.New("invalid dc:source")
+		}
+		sources, err = NewSources(filepath.Join(filepath.Dir(mdPath), sourcesBibtex))
+		if err != nil {
+			return nil, err
+		}
+	}
 	dialect, err := NewDialect(result)
 	if err != nil {
 		return nil, err
@@ -44,9 +60,10 @@ func NewDataset(mdPath string) (*Dataset, error) {
 		mdPath,
 		metadata,
 		dialect,
-		make(map[string]*Table)}
+		make(map[string]*Table),
+		sources}
 	for _, value := range result["tables"].([]interface{}) {
-		tbl, err := NewTable(value.(map[string]interface{}))
+		tbl, err := NewTable(value.(map[string]interface{}), sources != nil)
 		if err != nil {
 			return nil, err
 		}
@@ -122,7 +139,7 @@ func (dataset *Dataset) orderedTables() ([]*Table, error) {
 			val, ok := dataset.Tables[urlToName[url]]
 			if ok {
 				for _, fk := range val.ForeignKeys {
-					if fk.Reference.Resource == url {
+					if fk.Reference.Resource == url || fk.Reference.Resource == "SourceTable" {
 						// A self-referential FK. We ignore those anyway.
 						continue
 					}
@@ -160,6 +177,10 @@ func (dataset *Dataset) sqlSchema(noChecks bool) (string, error) {
 		res        []string
 		urlToTable = dataset.UrlToTable()
 	)
+	if dataset.Sources != nil {
+		res = append(res, dataset.Sources.SqlCreate())
+	}
+
 	orderedTableMap, err := dataset.orderedTables()
 	if err != nil {
 		return "", err
@@ -199,6 +220,14 @@ func (dataset *Dataset) ToSqlite(noChecks bool) (string, []TableData, error) {
 		return "", tableData, err
 	}
 	urlToTable := dataset.UrlToTable()
+
+	if dataset.Sources != nil {
+		rows, colNames, err := dataset.Sources.itemsToSql()
+		if err != nil {
+			return "", tableData, err
+		}
+		tableData = append(tableData, TableData{"SourceTable", colNames, rows})
+	}
 
 	for _, tbl := range orderedTables {
 		rows, colNames, err := tbl.rowsToSql()

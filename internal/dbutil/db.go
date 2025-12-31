@@ -23,7 +23,7 @@ func WithDatabase(dbPath string, fn func(*sql.DB) error, mustExist bool, foreign
 		return err
 	}
 	defer func(db *sql.DB) {
-		err = db.Close()
+		db.Close()
 	}(db)
 	_, err = db.Exec("PRAGMA journal_mode = MEMORY;")
 	if err != nil {
@@ -49,18 +49,18 @@ func WithDatabase(dbPath string, fn func(*sql.DB) error, mustExist bool, foreign
 func WithTransaction(db *sql.DB, fn func(tx *sql.Tx) error) (err error) {
 	tx, err := db.Begin()
 	if err != nil {
-		return
+		return err
 	}
 	defer tx.Rollback() // Safely ignored if tx.Commit() is called first
 
 	err = fn(tx)
 	if err != nil {
-		return
+		return err
 	}
 	if err = tx.Commit(); err != nil {
-		return
+		return err
 	}
-	return
+	return err
 }
 
 func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) {

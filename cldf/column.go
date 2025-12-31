@@ -1,8 +1,8 @@
-package csvw
+package cldf
 
 import (
 	"fmt"
-	"gocldf/csvw/datatype"
+	"gocldf/cldf/datatype"
 	"gocldf/internal/jsonutil"
 	"slices"
 	"strconv"

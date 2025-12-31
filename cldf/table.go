@@ -1,4 +1,4 @@
-package csvw
+package cldf
 
 import (
 	"archive/zip"
@@ -40,10 +40,13 @@ type Table struct {
 	trimmer       func(string) string
 }
 
-func NewTable(jsonTable map[string]interface{}) (tbl *Table, err error) {
+func NewTable(jsonTable map[string]interface{}, withSourceTable bool) (tbl *Table, err error) {
+	// FIXME: We must know whether the dataset has a sources bibfile, because then we'll turn
+	// columns with canonical name cldf_source into list-valued foreign keys to SourceTable.
 	var (
 		dialect *Dialect
 		trimmer = func(s string) string { return s }
+		fks     []*ForeignKey
 	)
 	tableSchema := jsonTable["tableSchema"].(map[string]interface{})
 
@@ -53,6 +56,15 @@ func NewTable(jsonTable map[string]interface{}) (tbl *Table, err error) {
 		col, err := NewColumn(i, jsonCol.(map[string]interface{}))
 		if err != nil {
 			return nil, err
+		}
+		if col.CanonicalName == "cldf_source" {
+			// remember and store additional foreign key constraint!
+			fks = append(
+				fks,
+				&ForeignKey{
+					ManyToMany:      true,
+					ColumnReference: []string{"cldf_source"},
+					Reference:       Reference{ColumnReference: []string{"id"}, Resource: "SourceTable"}})
 		}
 		columns[i] = col
 	}
@@ -65,10 +77,9 @@ func NewTable(jsonTable map[string]interface{}) (tbl *Table, err error) {
 		}
 	}
 	jsonFks, ok := tableSchema["foreignKeys"]
-	var fks []*ForeignKey
 	if ok {
-		fks = make([]*ForeignKey, len(jsonFks.([]interface{})))
-		for i, jsonFk := range jsonFks.([]interface{}) {
+		//fks = make([]*ForeignKey, len(jsonFks.([]interface{})))
+		for _, jsonFk := range jsonFks.([]interface{}) {
 			fk := ForeignKey{}
 			js, _ := json.Marshal(jsonFk)
 			err := json.Unmarshal(js, &fk)
@@ -80,7 +91,7 @@ func NewTable(jsonTable map[string]interface{}) (tbl *Table, err error) {
 			} else {
 				fk.ManyToMany = false
 			}
-			fks[i] = &fk
+			fks = append(fks, &fk)
 		}
 	}
 	pk, err := jsonutil.GetStringArray(tableSchema, "primaryKey")
@@ -239,12 +250,25 @@ func (tbl *Table) nameToCol() map[string]*Column {
 }
 
 func (tbl *Table) sqlCreateAssociationTable(fk ForeignKey, UrlToTable map[string]*Table) string {
-	var res []string
+	var (
+		res    []string
+		ttable string
+		tpk    string
+	)
 	stable := tbl.CanonicalName
 	spk := tbl.nameToCol()[tbl.PrimaryKey[0]].CanonicalName
-	ttable_ := UrlToTable[fk.Reference.Resource]
-	ttable := ttable_.CanonicalName
-	tpk := ttable_.nameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+
+	if fk.Reference.Resource == "SourceTable" {
+		ttable = "SourceTable"
+		tpk = "id"
+	} else {
+		ttable_, ok := UrlToTable[fk.Reference.Resource]
+		if !ok {
+			panic("not found " + fk.Reference.Resource)
+		}
+		ttable = ttable_.CanonicalName
+		tpk = ttable_.nameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+	}
 	res = append(res, fmt.Sprintf(
 		"CREATE TABLE IF NOT EXISTS `%v_%v` (", stable, ttable))
 	res = append(res, fmt.Sprintf(
@@ -267,24 +291,57 @@ func (tbl *Table) associationTableRowsToSql(
 	fk *ForeignKey,
 	UrlToTable map[string]*Table,
 ) (rows [][]any, tableName string, colNames []string, err error) {
+	var (
+		ttable  string
+		tpk     string
+		colName string
+	)
+	nameToCol := tbl.nameToCol()
 	stable := tbl.CanonicalName
-	spk := tbl.nameToCol()[tbl.PrimaryKey[0]].CanonicalName
-	ttable_ := UrlToTable[fk.Reference.Resource]
-	ttable := ttable_.CanonicalName
-	tpk := ttable_.nameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+	spk := nameToCol[tbl.PrimaryKey[0]].CanonicalName
+
+	if fk.Reference.Resource == "SourceTable" {
+		ttable = "SourceTable"
+		tpk = "id"
+		colName = "cldf_source"
+	} else {
+		ttable_, ok := UrlToTable[fk.Reference.Resource]
+		if !ok {
+			panic("not found " + fk.Reference.Resource)
+		}
+		ttable = ttable_.CanonicalName
+		tpk = nameToCol[ttable_.PrimaryKey[0]].CanonicalName
+		colName = nameToCol[fk.ColumnReference[0]].CanonicalName
+	}
 
 	colNames = []string{
 		fmt.Sprintf("%v_%v", stable, spk),
 		fmt.Sprintf("%v_%v", ttable, tpk),
 		"context"}
 
-	colName := tbl.nameToCol()[fk.ColumnReference[0]].CanonicalName
 	for _, row := range tbl.Data {
 		vals, ok := row[colName].([]string)
 		if ok {
 			if len(vals) > 0 {
 				for _, val := range vals {
-					row := []any{tbl.PrimaryKey[0], val, colName}
+					var (
+						context, pages string
+						found          bool
+					)
+					if ttable == "SourceTable" {
+						val, pages, found = strings.Cut(val, "[")
+						if found {
+							if strings.HasSuffix(pages, "]") {
+								context = pages[:len(pages)-1]
+							} else {
+								return rows, stable + "_" + ttable, colNames, errors.New("ill-formatted source")
+							}
+						}
+						context = ""
+					} else {
+						context = colName
+					}
+					row := []any{row[spk], val, context}
 					rows = append(rows, row)
 				}
 			}
@@ -314,15 +371,16 @@ func (tbl *Table) sqlCreate(UrlToTable map[string]*Table, noChecks bool) (string
 		manyToMany = append(manyToMany, fk.ColumnReference[0])
 	}
 	nameToCol := tbl.nameToCol()
-	pk = append(pk, "PRIMARY KEY(")
-	for i, col := range tbl.PrimaryKey {
-		if i > 0 {
-			pk = append(pk, ",")
+	if len(tbl.PrimaryKey) > 0 {
+		pk = append(pk, "PRIMARY KEY(")
+		for i, col := range tbl.PrimaryKey {
+			if i > 0 {
+				pk = append(pk, ",")
+			}
+			pk = append(pk, fmt.Sprintf("`%v`", nameToCol[col].CanonicalName))
 		}
-		pk = append(pk, fmt.Sprintf("`%v`", nameToCol[col].CanonicalName))
+		pk = append(pk, ")")
 	}
-	pk = append(pk, ")")
-
 	for i, col := range tbl.Columns {
 		if !slices.Contains(manyToMany, col.Name) {
 			clause := ""
@@ -332,7 +390,9 @@ func (tbl *Table) sqlCreate(UrlToTable map[string]*Table, noChecks bool) (string
 			clauses = append(clauses, clause+col.sqlCreate(noChecks))
 		}
 	}
-	clauses = append(clauses, strings.Join(pk, ""))
+	if len(pk) > 0 {
+		clauses = append(clauses, strings.Join(pk, ""))
+	}
 
 	for _, fk := range tbl.ForeignKeys {
 		if !fk.ManyToMany {

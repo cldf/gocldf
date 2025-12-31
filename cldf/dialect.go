@@ -3,7 +3,7 @@ Limitations:
   - go's csv.Reader always skips blank rows, see https://github.com/golang/go/issues/39119
     so the default (false) for skipBlankRows cannot be implemented currently.
 */
-package csvw
+package cldf
 
 import (
 	"encoding/csv"

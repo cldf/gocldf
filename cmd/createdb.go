@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"gocldf/csvw"
+	"gocldf/cldf"
 	"gocldf/internal/dbutil"
 	"gocldf/internal/pathutil"
 	"io"
@@ -14,10 +14,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChecks bool) error {
+func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChecks bool) (err error) {
 	if pathutil.PathExists(dbPath) {
 		if overwrite {
-			err := os.Remove(dbPath)
+			err = os.Remove(dbPath)
 			if err != nil {
 				return err
 			}
@@ -25,12 +25,12 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChe
 			return errors.New("database already exists")
 		}
 	}
-	ds, err := csvw.GetLoadedDataset(mdPath, noChecks)
+	ds, err := cldf.GetLoadedDataset(mdPath, noChecks)
 	if err != nil {
 		return err
 	}
-	err = dbutil.WithDatabase(dbPath, func(database *sql.DB) error {
-		return dbutil.WithTransaction(database, func(tx *sql.Tx) error {
+	err_ := dbutil.WithDatabase(dbPath, func(database *sql.DB) error {
+		return dbutil.WithTransaction(database, func(tx *sql.Tx) (err error) {
 			schema, tableData, err := ds.ToSqlite(noChecks)
 			if err != nil {
 				return err
@@ -45,8 +45,8 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChe
 			return nil
 		})
 	}, false, !noChecks)
-	if err != nil {
-		return err
+	if err_ != nil {
+		return err_
 	}
 	// We run a query to make sure it worked
 	var tableNames []string
