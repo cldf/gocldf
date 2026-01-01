@@ -159,7 +159,7 @@ func (tbl *Table) Read(dir string, dialect *Dialect, noChecks bool, ch chan<- Ta
 		rows [][]string
 		err  error
 	)
-	r, err := pathutil.Reader(fp)
+	_, r, err := pathutil.Reader(fp)
 	if err != nil {
 		ch <- TableRead{tbl.Url, err}
 		return

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"gocldf/internal/jsonutil"
+	"gocldf/internal/pathutil"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -73,6 +74,17 @@ func GetLoadedDataset(mdPath string, noChecks bool) (ds *Dataset, err error) {
 		return nil, err
 	}
 	return ds, nil
+}
+
+func (dataset *Dataset) TablePath(tbl *Table) (string, error) {
+	res := filepath.Join(filepath.Dir(dataset.MetadataPath), tbl.Url)
+	if !pathutil.PathExists(res) {
+		res += ".zip"
+	}
+	if !pathutil.PathExists(res) {
+		return "", errors.New("table path does not exist")
+	}
+	return res, nil
 }
 
 func (dataset *Dataset) LoadData(noChecks bool) error {

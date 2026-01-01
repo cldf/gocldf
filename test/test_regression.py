@@ -7,6 +7,8 @@ import tempfile
 import pathlib
 import subprocess
 
+from clldutils.misc import format_size
+
 PROJECTS = pathlib.Path(os.path.expanduser('~')) / "projects"
 DATASETS = [
     "grambank/grambank-cldf/cldf/StructureDataset-metadata.json",
@@ -28,11 +30,12 @@ def run():
         shutil.copy(wd / "gocldf", bin)
         assert bin.exists()
         for ds in DATASETS:
+            out = temp / "db.sqlite"
             s = time.time()
             print("{} ...".format(ds))
-            res = subprocess.check_output([str(bin), "createdb", str(PROJECTS / ds), "db.sqlite", "-f"])
+            res = subprocess.check_output([str(bin), "createdb", str(PROJECTS / ds), str(out), "-f"])
             assert "Loaded" in res.decode("utf8")
-            print("... {:.1f}s".format(time.time()-s))
+            print("... {:.1f}s\t{}".format(time.time()-s, format_size(out.stat().st_size)))
 
 if __name__ == "__main__":
     run()

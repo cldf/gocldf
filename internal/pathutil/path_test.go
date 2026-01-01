@@ -7,7 +7,7 @@ import (
 )
 
 func read(fname string) (string, error) {
-	r, err := Reader(filepath.Join("testdata", fname))
+	_, r, err := Reader(filepath.Join("testdata", fname))
 	if err != nil {
 		return "", err
 	}

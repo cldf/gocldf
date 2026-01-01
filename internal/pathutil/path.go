@@ -4,9 +4,28 @@ import (
 	"archive/zip"
 	"bytes"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 )
+
+func GetFormattedSize(path string) (string, error) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return "", err
+	}
+	// Size() returns the size in bytes as an int64
+	units := []string{"bytes", "KB", "MB", "GB"}
+	size := float64(info.Size())
+
+	for _, unit := range units {
+		if size < 1024.0 && size > -1024.0 {
+			return fmt.Sprintf("%.1f%v", size, unit), nil
+		}
+		size = size / 1024.0
+	}
+	return fmt.Sprintf("%g%v", size, "TB"), nil
+}
 
 func PathExists(path string) bool {
 	_, err := os.Stat(path)
@@ -75,17 +94,17 @@ Usage:
 		}
 	}(reader)
 */
-func Reader(p string) (r any, err error) {
+func Reader(p string) (pp string, r any, err error) {
 	if !PathExists(p) {
 		zippedBytes, err := readZipped(p + ".zip")
 		if err != nil {
-			return nil, err
+			return "", nil, err
 		}
-		return bytes.NewReader(zippedBytes), nil
+		return p + ".zip", bytes.NewReader(zippedBytes), nil
 	}
 	file, err := os.Open(p)
 	if err != nil {
-		return nil, err
+		return "", nil, err
 	}
-	return file, nil
+	return p, file, nil
 }

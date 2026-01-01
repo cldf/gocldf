@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"gocldf/cldf"
+	"gocldf/internal/pathutil"
 	"io"
+	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/spf13/cobra"
@@ -34,15 +36,42 @@ func stats(out io.Writer, mdPath string, withMetadata bool) error {
 	}
 	w := tabwriter.NewWriter(out, 0, 0, 1, ' ', tabwriter.Debug)
 	// noinspection GoUnhandledErrorResultInspection
-	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "Filename", "Component", "Rows", "FKs")
+	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "Filename", "Component", "Rows", "Size")
 	// noinspection GoUnhandledErrorResultInspection
-	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "--------", "---------", "----", "---")
+	fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", "--------", "---------", "--------", "----------")
 	for _, table := range ds.Tables {
+		path, err := ds.TablePath(table)
+		if err != nil {
+			return err
+		}
+		size, err := pathutil.GetFormattedSize(path)
+		if err != nil {
+			return err
+		}
 		cname := ""
 		if table.Comp != "" {
 			cname = table.CanonicalName
 		}
-		fmt.Fprintf(w, "%v\t%v\t%v\t%v\n", table.Url, cname, len(table.Data), len(table.ForeignKeys))
+		fmt.Fprintf(
+			w,
+			"%v\t%v\t%v\t%v\n",
+			filepath.Base(path),
+			cname,
+			fmt.Sprintf("%8s", fmt.Sprintf("%v", len(table.Data))),
+			fmt.Sprintf("%10s", size))
+	}
+	if ds.Sources != nil {
+		size, err := pathutil.GetFormattedSize(ds.Sources.Path)
+		if err != nil {
+			return err
+		}
+		fmt.Fprintf(
+			w,
+			"%v\t%v\t%v\t%v\n",
+			filepath.Base(ds.Sources.Path),
+			"SourceTable",
+			fmt.Sprintf("%8s", fmt.Sprintf("%v", len(ds.Sources.Items))),
+			fmt.Sprintf("%10s", size))
 	}
 	// noinspection GoUnhandledErrorResultInspection
 	w.Flush()

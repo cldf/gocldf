@@ -33,6 +33,7 @@ func NewSource(entry *bibtex.BibEntry) *Source {
 }
 
 type Sources struct {
+	Path       string
 	Items      []*Source
 	FieldNames []string
 }
@@ -61,7 +62,7 @@ func normalizeBibtex(r io.Reader) (io.Reader, error) {
 }
 
 func NewSources(p string) (sources *Sources, err error) {
-	f, err := pathutil.Reader(p)
+	pp, f, err := pathutil.Reader(p)
 	if err != nil {
 		return nil, err
 	}
@@ -90,8 +91,7 @@ func NewSources(p string) (sources *Sources, err error) {
 			}
 		}
 	}
-	return &Sources{Items: res, FieldNames: fields}, nil
-
+	return &Sources{Path: pp, Items: res, FieldNames: fields}, nil
 }
 
 func (s *Sources) SqlCreate() string {
