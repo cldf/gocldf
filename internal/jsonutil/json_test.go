@@ -11,6 +11,14 @@ func makeJson(s string) map[string]any {
 	return jsonObj
 }
 
+func Test_ReadObject(t *testing.T) {
+	json, _ := ReadObject("testdata/test.json")
+	val, _ := json["test"]
+	if val.(string) != "name" {
+		t.Errorf(`problem: "%v"`, json)
+	}
+}
+
 func Test_GetString(t *testing.T) {
 	json, _ := GetString(makeJson(`{"id": 123, "name": "test"}`), "name", "x")
 	if json != "test" {

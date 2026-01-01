@@ -18,6 +18,13 @@ func read(fname string) (string, error) {
 	return string(b), nil
 }
 
+func Test_GetFormattedSize(t *testing.T) {
+	res, _ := GetFormattedSize("testdata/test.txt.zip")
+	if res != "179.0bytes" {
+		t.Errorf(`problem: "%v" vs "%v"`, "179.0bytes", res)
+	}
+}
+
 func Test_Reader(t *testing.T) {
 	expected := "hello world!\n"
 	res, _ := read("test.txt")
