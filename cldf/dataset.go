@@ -1,10 +1,9 @@
 package cldf
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
+	"gocldf/internal/jsonutil"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,18 +18,11 @@ type Dataset struct {
 }
 
 func NewDataset(mdPath string) (*Dataset, error) {
-	data, err := os.ReadFile(mdPath)
+	result, err := jsonutil.ReadObject(mdPath)
 	if err != nil {
 		return nil, err
 	}
-	var result map[string]interface{}
-
-	err = json.Unmarshal(data, &result)
-	if err != nil {
-		return nil, err
-	}
-
-	metadata := make(map[string]interface{}, len(result)-1)
+	metadata := make(map[string]any, len(result)-1)
 	for k, v := range result {
 		if k == "tables" {
 			continue
@@ -41,12 +33,11 @@ func NewDataset(mdPath string) (*Dataset, error) {
 		sourcesBibtex string
 		sources       *Sources
 	)
-	val, ok := result["dc:source"]
-	if ok {
-		sourcesBibtex, ok = val.(string)
-		if !ok {
-			return nil, errors.New("invalid dc:source")
-		}
+	sourcesBibtex, err = jsonutil.GetString(result, "dc:source", "")
+	if err != nil {
+		return nil, err
+	}
+	if sourcesBibtex != "" {
 		sources, err = NewSources(filepath.Join(filepath.Dir(mdPath), sourcesBibtex))
 		if err != nil {
 			return nil, err
@@ -115,10 +106,10 @@ func (dataset *Dataset) UrlToCanonicalName() map[string]string {
 	return res
 }
 
+// orderedTables determines the order in which to create the tables in a db in such a way that foreign key constraints are satisfied.
 func (dataset *Dataset) orderedTables() ([]*Table, error) {
 	var (
-		urlToName = dataset.UrlToCanonicalName()
-		// Determine the order in which to create the tables
+		urlToName     = dataset.UrlToCanonicalName()
 		tables        []string
 		orderedTables []string
 	)
@@ -207,11 +198,9 @@ type TableData struct {
 	Rows      [][]any
 }
 
-// Function ToSqlite returns the data necessary to load the dataset into a SQLite database.
-func (dataset *Dataset) ToSqlite(noChecks bool) (string, []TableData, error) {
-	var tableData []TableData
-
-	schema, err := dataset.sqlSchema(noChecks)
+// ToSqlite returns the data necessary to load the dataset into a SQLite database.
+func (dataset *Dataset) ToSqlite(noChecks bool) (schema string, tableData []TableData, err error) {
+	schema, err = dataset.sqlSchema(noChecks)
 	if err != nil {
 		return "", tableData, err
 	}

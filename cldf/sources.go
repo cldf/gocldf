@@ -1,8 +1,12 @@
 package cldf
 
 import (
+	"bufio"
 	"fmt"
+	"gocldf/internal/pathutil"
+	"io"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -18,7 +22,8 @@ type Source struct {
 func NewSource(entry *bibtex.BibEntry) *Source {
 	fields := make(map[string]string)
 	for k, v := range entry.Fields {
-		fields[k] = v.String()
+		// We reverse the temporary replacement for @ to appease the BibTeX parser.
+		fields[k] = strings.ReplaceAll(v.String(), "�", "@")
 	}
 	return &Source{
 		Id:     entry.CiteName,
@@ -32,20 +37,54 @@ type Sources struct {
 	FieldNames []string
 }
 
-func NewSources(p string) (*Sources, error) {
-	f, err := os.Open(p)
+func normalizeBibtex(r io.Reader) (io.Reader, error) {
+	var res []string
+	comment := regexp.MustCompile("^\\s*comment\\s*=")
+	atAtStart := regexp.MustCompile("^\\s*@")
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if comment.MatchString(line) {
+			// For some reason "comment" seems to be forbidden as field name.
+			line = strings.Replace(line, "comment", "comments", 1)
+		}
+		if !atAtStart.MatchString(line) {
+			line = strings.ReplaceAll(line, "@", "�")
+		}
+		res = append(res, line)
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, err
+	}
+	return strings.NewReader(strings.Join(res, "\n")), nil
+}
+
+func NewSources(p string) (sources *Sources, err error) {
+	f, err := pathutil.Reader(p)
 	if err != nil {
 		return nil, err
 	}
-	entries, err := bibtex.Parse(f)
+	defer func(file any) {
+		switch file.(type) {
+		case *os.File:
+			err = file.(*os.File).Close()
+		}
+	}(f)
+
+	r, err := normalizeBibtex(f.(io.Reader))
 	if err != nil {
 		return nil, err
+	}
+	entries, err := bibtex.Parse(r)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing %v: %w", p, err)
 	}
 	res := make([]*Source, len(entries.Entries))
-	fields := []string{}
+	var fields []string
 	for i, entry := range entries.Entries {
 		res[i] = NewSource(entry)
-		for name, _ := range entry.Fields {
+		for name := range entry.Fields {
 			if !slices.Contains(fields, name) {
 				fields = append(fields, name)
 			}
@@ -56,11 +95,14 @@ func NewSources(p string) (*Sources, error) {
 }
 
 func (s *Sources) SqlCreate() string {
-	res := []string{}
+	var res []string
 	res = append(res, "CREATE TABLE IF NOT EXISTS `SourceTable` (")
 	res = append(res, "\t`id`\tTEXT,")
 	res = append(res, "\t`genre`\tTEXT,")
 	for _, field := range s.FieldNames {
+		if field == "type" || field == "id" {
+			field += "_"
+		}
 		res = append(res, fmt.Sprintf("\t`%s`\tTEXT,", field))
 	}
 	res = append(res, "\tPRIMARY KEY(`id`)")
@@ -80,6 +122,9 @@ func (s *Sources) itemsToSql() (rows [][]any, colNames []string, err error) {
 		rows[i][1] = item.Type
 
 		for j, field := range s.FieldNames {
+			if field == "type" || field == "id" {
+				field += "_"
+			}
 			if i == 0 {
 				colNames = append(colNames, field)
 			}

@@ -2,28 +2,20 @@ package cmd
 
 import (
 	"database/sql"
-	"errors"
 	"fmt"
 	"gocldf/cldf"
 	"gocldf/internal/dbutil"
 	"gocldf/internal/pathutil"
 	"io"
-	"os"
 	"slices"
 
 	"github.com/spf13/cobra"
 )
 
 func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChecks bool) (err error) {
-	if pathutil.PathExists(dbPath) {
-		if overwrite {
-			err = os.Remove(dbPath)
-			if err != nil {
-				return err
-			}
-		} else {
-			return errors.New("database already exists")
-		}
+	dbPath, err = pathutil.GetFreshPath(dbPath, overwrite)
+	if err != nil {
+		return err
 	}
 	ds, err := cldf.GetLoadedDataset(mdPath, noChecks)
 	if err != nil {
@@ -40,7 +32,10 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChe
 				return err
 			}
 			for _, tData := range tableData { // ... and the data.
-				dbutil.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
+				err = dbutil.BatchInsert(tx, tData.TableName, tData.ColNames, tData.Rows)
+				if err != nil {
+					return err
+				}
 			}
 			return nil
 		})

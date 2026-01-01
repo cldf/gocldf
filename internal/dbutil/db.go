@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 
 	"gocldf/internal/pathutil"
@@ -63,7 +62,7 @@ func WithTransaction(db *sql.DB, fn func(tx *sql.Tx) error) (err error) {
 	return err
 }
 
-func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) {
+func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) error {
 	var (
 		version   string
 		maxParams = 900
@@ -106,11 +105,11 @@ func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) 
 		}
 		_, err := tx.Exec(insert+allPlaceholders+";", args...)
 		if err != nil {
-			log.Fatal(err)
+			return fmt.Errorf(`error executing "%v": %w`, insert, err)
 		}
-
 		current += nRows
 	}
+	return nil
 }
 
 func Query(db *sql.DB, query string, scanner func(*sql.Rows) error, args ...interface{}) (err error) {

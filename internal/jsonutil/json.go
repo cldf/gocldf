@@ -1,10 +1,25 @@
 package jsonutil
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 )
+
+func ReadObject(path string) (map[string]any, error) {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	var result map[string]any
+	err = json.Unmarshal(data, &result)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
 
 func GetString(jsonObject map[string]any, attr string, defaultValue string) (string, error) {
 	var res string

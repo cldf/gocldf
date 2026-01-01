@@ -1,8 +1,6 @@
 package cldf
 
 import (
-	"archive/zip"
-	"bytes"
 	"encoding/csv"
 	"encoding/json"
 	"errors"
@@ -41,8 +39,6 @@ type Table struct {
 }
 
 func NewTable(jsonTable map[string]interface{}, withSourceTable bool) (tbl *Table, err error) {
-	// FIXME: We must know whether the dataset has a sources bibfile, because then we'll turn
-	// columns with canonical name cldf_source into list-valued foreign keys to SourceTable.
 	var (
 		dialect *Dialect
 		trimmer = func(s string) string { return s }
@@ -57,7 +53,7 @@ func NewTable(jsonTable map[string]interface{}, withSourceTable bool) (tbl *Tabl
 		if err != nil {
 			return nil, err
 		}
-		if col.CanonicalName == "cldf_source" {
+		if withSourceTable && col.CanonicalName == "cldf_source" {
 			// remember and store additional foreign key constraint!
 			fks = append(
 				fks,
@@ -156,68 +152,26 @@ type TableRead struct {
 	Err error
 }
 
-func readZipped(fp string) (bytes []byte, err error) {
-	r, err := zip.OpenReader(fp)
-	if err != nil {
-		return nil, err
-	}
-	defer func(r *zip.ReadCloser) {
-		err = r.Close()
-	}(r)
-
-	var contentBytes []byte
-	for _, f := range r.File {
-		rc, err := f.Open()
-		if err != nil {
-			return nil, err
-		}
-		contentBytes, err = io.ReadAll(rc)
-		if err != nil {
-			return nil, err
-		}
-		err = rc.Close()
-		if err != nil {
-			return nil, err
-		} // Must close each file reader individually
-		break
-	}
-	return contentBytes, nil
-}
-
 func (tbl *Table) Read(dir string, dialect *Dialect, noChecks bool, ch chan<- TableRead) {
 	var reader *csv.Reader
 	fp := filepath.Join(dir, tbl.Url)
-	zipped := false
-	if !pathutil.PathExists(fp) {
-		fp += ".zip"
-		zipped = true
-	}
 	var (
 		rows [][]string
 		err  error
 	)
-	if zipped {
-		zippedBytes, err := readZipped(fp)
-		if err != nil {
-			ch <- TableRead{tbl.Url, err}
-			return
-		}
-		reader = csv.NewReader(bytes.NewReader(zippedBytes))
-	} else {
-		file, err := os.Open(fp)
-		if err != nil {
-			ch <- TableRead{tbl.Url, err}
-			return
-		}
-		defer func(file *os.File) {
-			err := file.Close()
-			if err != nil {
-				ch <- TableRead{tbl.Url, err}
-				return
-			}
-		}(file)
-		reader = csv.NewReader(file)
+	r, err := pathutil.Reader(fp)
+	if err != nil {
+		ch <- TableRead{tbl.Url, err}
+		return
 	}
+	defer func(file any) {
+		switch file.(type) {
+		case *os.File:
+			err = file.(*os.File).Close()
+		}
+	}(r)
+	reader = csv.NewReader(r.(io.Reader))
+
 	if tbl.Dialect != nil {
 		dialect = tbl.Dialect
 	}
@@ -296,9 +250,8 @@ func (tbl *Table) associationTableRowsToSql(
 		tpk     string
 		colName string
 	)
-	nameToCol := tbl.nameToCol()
 	stable := tbl.CanonicalName
-	spk := nameToCol[tbl.PrimaryKey[0]].CanonicalName
+	spk := tbl.nameToCol()[tbl.PrimaryKey[0]].CanonicalName
 
 	if fk.Reference.Resource == "SourceTable" {
 		ttable = "SourceTable"
@@ -310,8 +263,8 @@ func (tbl *Table) associationTableRowsToSql(
 			panic("not found " + fk.Reference.Resource)
 		}
 		ttable = ttable_.CanonicalName
-		tpk = nameToCol[ttable_.PrimaryKey[0]].CanonicalName
-		colName = nameToCol[fk.ColumnReference[0]].CanonicalName
+		tpk = ttable_.nameToCol()[ttable_.PrimaryKey[0]].CanonicalName
+		colName = tbl.nameToCol()[fk.ColumnReference[0]].CanonicalName
 	}
 
 	colNames = []string{
