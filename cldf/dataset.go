@@ -18,7 +18,7 @@ type Dataset struct {
 	Sources      *Sources
 }
 
-func NewDataset(mdPath string) (*Dataset, error) {
+func NewDataset(mdPath string, bibtexFieldsets ...string) (*Dataset, error) {
 	result, err := jsonutil.ReadObject(mdPath)
 	if err != nil {
 		return nil, err
@@ -39,7 +39,7 @@ func NewDataset(mdPath string) (*Dataset, error) {
 		return nil, err
 	}
 	if sourcesBibtex != "" {
-		sources, err = NewSources(filepath.Join(filepath.Dir(mdPath), sourcesBibtex))
+		sources, err = NewSources(filepath.Join(filepath.Dir(mdPath), sourcesBibtex), bibtexFieldsets...)
 		if err != nil {
 			return nil, err
 		}
@@ -64,8 +64,8 @@ func NewDataset(mdPath string) (*Dataset, error) {
 	return &res, nil
 }
 
-func GetLoadedDataset(mdPath string, noChecks bool) (ds *Dataset, err error) {
-	ds, err = NewDataset(mdPath)
+func GetLoadedDataset(mdPath string, noChecks bool, bibtexFieldsets ...string) (ds *Dataset, err error) {
+	ds, err = NewDataset(mdPath, bibtexFieldsets...)
 	if err != nil {
 		return nil, err
 	}

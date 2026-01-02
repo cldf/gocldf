@@ -33,7 +33,7 @@ def run():
             out = temp / "db.sqlite"
             s = time.time()
             print("{} ...".format(ds))
-            res = subprocess.check_output([str(bin), "createdb", str(PROJECTS / ds), str(out), "-f"])
+            res = subprocess.check_output([str(bin), "createdb", str(PROJECTS / ds), str(out), "-f", "--bibtexfields", "bibtex,biblatex"])
             assert "Loaded" in res.decode("utf8")
             print("... {:.1f}s\t{}".format(time.time()-s, format_size(out.stat().st_size)))
 

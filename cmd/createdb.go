@@ -7,17 +7,18 @@ import (
 	"gocldf/internal/dbutil"
 	"gocldf/internal/pathutil"
 	"io"
+	"maps"
 	"slices"
 
 	"github.com/spf13/cobra"
 )
 
-func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChecks bool) (err error) {
+func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChecks bool, bibtexFieldsets ...string) (err error) {
 	dbPath, err = pathutil.GetFreshPath(dbPath, overwrite)
 	if err != nil {
 		return err
 	}
-	ds, err := cldf.GetLoadedDataset(mdPath, noChecks)
+	ds, err := cldf.GetLoadedDataset(mdPath, noChecks, bibtexFieldsets...)
 	if err != nil {
 		return err
 	}
@@ -71,8 +72,9 @@ func createdb(out io.Writer, mdPath string, dbPath string, overwrite bool, noChe
 }
 
 var (
-	overwrite bool
-	noChecks  bool
+	overwrite       bool
+	noChecks        bool
+	bibtexFieldsets []string
 )
 var createdbCmd = &cobra.Command{
 	Use:   "createdb DATASET DB_PATH",
@@ -80,7 +82,13 @@ var createdbCmd = &cobra.Command{
 	Long:  "",
 	Args:  cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return createdb(cmd.OutOrStdout(), args[0], args[1], overwrite, noChecks)
+		for _, v := range bibtexFieldsets {
+			_, ok := cldf.BibtexFieldsets[v]
+			if !ok {
+				return fmt.Errorf("invalid bibtex fieldset %q: must be one of %v", v, slices.Collect(maps.Keys(cldf.BibtexFieldsets)))
+			}
+		}
+		return createdb(cmd.OutOrStdout(), args[0], args[1], overwrite, noChecks, bibtexFieldsets...)
 	},
 }
 
@@ -92,5 +100,6 @@ func init() {
 		"n",
 		false,
 		"Do not enforce column constraints on read and write. Can be used to speed up db creation for datasets with known validity.")
+	createdbCmd.Flags().StringSliceVarP(&bibtexFieldsets, "bibtexfields", "", []string{}, "Restrict loaded fields for SourceTable to standard BibTeX fieldsets (bibtex or biblatex).")
 	rootCmd.AddCommand(createdbCmd)
 }

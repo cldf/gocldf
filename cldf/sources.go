@@ -13,15 +13,85 @@ import (
 	"github.com/nickng/bibtex"
 )
 
+var FieldsBiblatex = []string{
+	"abstract",
+	"author",
+	"booktitle",
+	"date",
+	"doi",
+	"editor",
+	"entrysubtype",
+	"eprint",
+	"isbn",
+	"issn",
+	"journaltitle",
+	"langid",
+	"location",
+	"note",
+	"number",
+	"pages",
+	"publisher",
+	"shorttitle",
+	"title",
+	"url",
+	"urldate",
+	"usera",
+	"userb",
+	"userc",
+	"userd",
+	"usere",
+	"userf",
+	"verba",
+	"verbb",
+	"verbc",
+	"volume",
+}
+var FieldsBibtex = []string{
+	"address",
+	"annote",
+	"author",
+	"booktitle",
+	"chapter",
+	"crossref",
+	"edition",
+	"editor",
+	"howpublished",
+	"institution",
+	"journal",
+	"key",
+	"month",
+	"note",
+	"number",
+	"organization",
+	"pages",
+	"publisher",
+	"school",
+	"series",
+	"title",
+	"type",
+	"volume",
+	"year",
+}
+var BibtexFieldsets = map[string][]string{
+	"biblatex": FieldsBiblatex,
+	"bibtex":   FieldsBibtex,
+}
+
 type Source struct {
 	Id     string
 	Type   string
 	Fields map[string]string
 }
 
-func NewSource(entry *bibtex.BibEntry) *Source {
+func NewSource(entry *bibtex.BibEntry, allowedFields map[string]struct{}) *Source {
 	fields := make(map[string]string)
 	for k, v := range entry.Fields {
+		if len(allowedFields) > 0 {
+			_, ok := allowedFields[k]
+			if !ok {
+				continue
+			}
+		}
 		// We reverse the temporary replacement for @ to appease the BibTeX parser.
 		fields[k] = strings.ReplaceAll(v.String(), "�", "@")
 	}
@@ -61,7 +131,7 @@ func normalizeBibtex(r io.Reader) (io.Reader, error) {
 	return strings.NewReader(strings.Join(res, "\n")), nil
 }
 
-func NewSources(p string) (sources *Sources, err error) {
+func NewSources(p string, fieldsets ...string) (sources *Sources, err error) {
 	pp, f, err := pathutil.Reader(p)
 	if err != nil {
 		return nil, err
@@ -72,6 +142,13 @@ func NewSources(p string) (sources *Sources, err error) {
 			err = file.(*os.File).Close()
 		}
 	}(f)
+
+	allowedFields := make(map[string]struct{})
+	for _, fieldset := range fieldsets {
+		for _, field := range BibtexFieldsets[fieldset] {
+			allowedFields[field] = struct{}{}
+		}
+	}
 
 	r, err := normalizeBibtex(f.(io.Reader))
 	if err != nil {
@@ -84,8 +161,8 @@ func NewSources(p string) (sources *Sources, err error) {
 	res := make([]*Source, len(entries.Entries))
 	var fields []string
 	for i, entry := range entries.Entries {
-		res[i] = NewSource(entry)
-		for name := range entry.Fields {
+		res[i] = NewSource(entry, allowedFields)
+		for name := range res[i].Fields {
 			if !slices.Contains(fields, name) {
 				fields = append(fields, name)
 			}

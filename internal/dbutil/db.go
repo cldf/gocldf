@@ -87,15 +87,17 @@ func BatchInsert(tx *sql.Tx, tableName string, colNames []string, rows [][]any) 
 	}
 	insertSql = append(insertSql, ") VALUES ")
 	insert := strings.Join(insertSql, "")
+	rowPlaceholder := "(" + strings.Trim(strings.Repeat("?,", nCols), ",") + ")"
 
+	nBatches := 0
 	current := 0
 	for current < len(rows) {
+		nBatches++
 		nRows := batchSize
 		if nRows+current > len(rows) {
 			nRows = len(rows) - current
 		}
 
-		rowPlaceholder := "(" + strings.Trim(strings.Repeat("?,", nCols), ",") + ")"
 		allPlaceholders := strings.Repeat(rowPlaceholder+",", nRows)
 		allPlaceholders = strings.TrimSuffix(allPlaceholders, ",")
 
